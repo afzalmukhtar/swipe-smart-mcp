@@ -11,17 +11,15 @@ authors = [
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
@@ -49,6 +47,9 @@ dev = [
 [project.scripts]
 financial-mcp-server = "financial_mcp.server:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/financial_mcp"]
+
 [project.urls]
 Homepage = "https://github.com/YOUR_USERNAME/financial-mcp-server"
 Repository = "https://github.com/YOUR_USERNAME/financial-mcp-server.git"
@@ -56,16 +57,18 @@ Issues = "https://github.com/YOUR_USERNAME/financial-mcp-server/issues"
 
 [tool.black]
 line-length = 88
-target-version = ['py38']
+target-version = ['py311']
 
 [tool.ruff]
-select = ["E", "F", "I", "N", "UP", "RUF"]
-ignore = ["E501"]
 line-length = 88
-target-version = "py38"
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "RUF"]
+ignore = ["E501", "N805"]  # N805: First argument should be named 'self' (ignore for Pydantic validators)
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -74,3 +77,8 @@ disallow_untyped_defs = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-v --cov=financial_mcp --cov-report=term-missing"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.9",
+]

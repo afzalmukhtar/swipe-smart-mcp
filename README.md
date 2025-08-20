@@ -143,7 +143,7 @@ The server will guide you through initial setup:
 
 ## 📋 Requirements
 
-- Python 3.8+
+- Python 3.11+
 - SQLite (included with Python)
 - MCP-compatible LLM client (Claude Desktop, etc.)
 
