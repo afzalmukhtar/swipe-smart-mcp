@@ -11,7 +11,7 @@ authors = [
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -23,15 +23,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "mcp>=1.0.0",
-    "pydantic>=2.0.0",
-    "sqlalchemy>=2.0.0",
-    "aiosqlite>=0.19.0",
-    "pandas>=2.0.0",
-    "openpyxl>=3.1.0",
-    "python-dateutil>=2.8.0",
-    "typer>=0.9.0",
-    "rich>=13.0.0",
+    "fastapi>=0.112",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.7",
 ]
 
 [project.optional-dependencies]
@@ -44,11 +39,11 @@ dev = [
     "mypy>=1.5.0",
 ]
 
-[project.scripts]
-financial-mcp-server = "financial_mcp.server:main"
+[tool.uv]
+managed = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/financial_mcp"]
+packages = ["src/finance_mcp"]
 
 [project.urls]
 Homepage = "https://github.com/YOUR_USERNAME/financial-mcp-server"
@@ -57,18 +52,18 @@ Issues = "https://github.com/YOUR_USERNAME/financial-mcp-server/issues"
 
 [tool.black]
 line-length = 88
-target-version = ['py311']
+target-version = ['py310']
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "RUF"]
 ignore = ["E501", "N805"]  # N805: First argument should be named 'self' (ignore for Pydantic validators)
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -76,7 +71,7 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-v --cov=financial_mcp --cov-report=term-missing"
+addopts = "-v --cov=finance_mcp --cov-report=term-missing"
 
 [dependency-groups]
 dev = [
