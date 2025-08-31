@@ -23,8 +23,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi>=0.112",
-    "uvicorn[standard]>=0.30",
+    "fastmcp>=2.10",
     "sqlalchemy>=2.0",
     "pydantic>=2.7",
 ]
@@ -72,6 +71,9 @@ disallow_untyped_defs = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-v --cov=finance_mcp --cov-report=term-missing"
+
+[project.scripts]
+finance-mcp = "mcp_server:main"
 
 [dependency-groups]
 dev = [
