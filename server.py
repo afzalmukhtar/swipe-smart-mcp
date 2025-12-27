@@ -4,7 +4,7 @@ from mcp.server.fastmcp import FastMCP
 
 logger = getLogger(__name__)
 
-mcp = FastMCP("Personal Finance Server")
+mcp = FastMCP("finance-server")
 
 # database setup
 database = []
@@ -162,5 +162,4 @@ def adjust_reward_points(card_name: str, points: int, reason: str) -> str:
 
 
 if __name__ == "__main__":
-    app = FastMCP()
-    app.run()
+    mcp.run()
