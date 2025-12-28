@@ -85,7 +85,7 @@ def get_recent_transactions() -> dict:
                 else:
                     card_info = "Unknown Card"
 
-                response[txn.id] = {
+                response[f"Txn ID: {txn.id}"] = {
                     "merchant": txn.merchant,
                     "amount": txn.amount,
                     "platform": txn.platform,
@@ -195,6 +195,83 @@ def get_card_rules(card_identifier: str) -> dict:
         }
 
 
+# --- Tool 4: Delete Transaction ---
+@mcp.tool()
+def delete_transaction(transaction_id: int) -> str:
+    """
+    Permanently removes a specific transaction record from the database.
+
+    Args:
+        transaction_id (int): The unique numeric ID of the transaction (found via 'get_recent_transactions').
+
+    Returns:
+        str: Success or error message.
+    """
+    try:
+        with Session(engine) as session:
+            txn = session.get(Expense, transaction_id)
+
+            if not txn:
+                return f"❌ Error: Transaction with ID {transaction_id} not found."
+
+            # Save details for the confirmation message before deleting
+            details = f"{txn.merchant} (₹{txn.amount}) [Date: {txn.date.strftime('%Y-%m-%d')}, Category: {txn.category}, Platform: {txn.platform}]"
+
+            session.delete(txn)
+            session.commit()
+
+            return f"🗑️ Success: Deleted transaction '{details}' [ID: {transaction_id}]."
+
+    except Exception as e:
+        return (
+            f"❌ Error executing tool: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+        )
+
+
+# --- TOOL 5: Delete a Credit Card ---
+@mcp.tool()
+def delete_credit_card(card_id: int) -> str:
+    """
+    Permanently deletes a credit card and ALL its associated rules, limits, and history.
+
+    ⚠️ WARNING: This action cannot be undone. It removes:
+    - The Card entry
+    - All Reward Rules for this card
+    - All Cap Buckets for this card
+    - All Redemption Partners for this card
+    - (Expenses might remain as orphans depending on DB settings, but are usually unlinked)
+
+    Args:
+        card_id (int): The unique numeric ID of the card (found via 'get_my_cards').
+
+    Returns:
+        str: Success or error message.
+    """
+    try:
+        with Session(engine) as session:
+            card = session.get(CreditCard, card_id)
+
+            if not card:
+                return f"❌ Error: Card with ID {card_id} not found."
+
+            card_name = card.name
+            card_limit = card.monthly_limit
+            card_bank = card.bank
+
+            # Delete the card (SQLModel/SQLAlchemy usually handles simple deletions,
+            # but note that related rows might need explicit cascading in complex setups.
+            # For this simple setup, we delete the parent.)
+            session.delete(card)
+            session.commit()
+
+            return f"🗑️ Success: Deleted Card '{card_name}' (Limit: ₹{card_limit}, Bank: {card_bank}) [ID: {card_id}] and its configuration."
+
+    except Exception as e:
+        return (
+            f"❌ Error executing tool: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+        )
+
+
 # --------------------- Wallet ---------------------
 # This is the main wallet that contains your credit cards
 # --------------------------------------------------
@@ -221,21 +298,6 @@ def add_credit_card(
     """
     logger.info(f"Adding credit card: {name}")
     return f"Credit card '{name}' added successfully."
-
-
-@mcp.tool()
-def delete_credit_card(card_name: str) -> str:
-    """
-    Permanently removes a credit card from the system.
-
-    Args:
-        card_name: The exact name of the card to delete.
-
-    Returns:
-        Success or error message.
-    """
-    logger.info(f"Deleting credit card: {card_name}")
-    return f"Credit card '{card_name}' deleted successfully."
 
 
 # --------------------- Transactions ---------------------
