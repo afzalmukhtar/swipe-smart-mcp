@@ -1,9 +1,10 @@
 import json
 import traceback
+from datetime import datetime
 from logging import getLogger
 from pathlib import Path
-from typing import Optional
 from textwrap import dedent
+from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 from sqlmodel import Session, col, select
@@ -97,7 +98,8 @@ def log_expense() -> str:
     ]
     excluded_list = ", ".join(excluded)
 
-    return dedent("""
+    return dedent(
+    """
         # Add New Transaction
 
         I'll help you log a new expense. Let me gather the details.
@@ -216,7 +218,8 @@ def log_expense() -> str:
         User, please tell me about the transaction you want to add. 
 
         What did you spend on, how much, and how did you pay?
-        """
+    """
+    
 
 
 # ========================= TOOLS =========================
@@ -509,29 +512,113 @@ def add_credit_card(
 
 
 # --------------------- Transactions ---------------------
-# This is the main wallet that contains your credit cards
+# Log and track expenses across your credit cards
 # --------------------------------------------------------
 @mcp.tool()
 def add_transaction(
-    amount: float, merchant: str, category: str, card_name: str, date: str = None
+    amount: float,
+    merchant: str,
+    category: str,
+    card_name: str,
+    platform: str = "Direct",
+    date: Optional[str] = None,
 ) -> str:
     """
     Logs a new expense (transaction) to the database.
 
     Args:
-        amount: The value of the transaction.
-        merchant: The name of the place/service (e.g., "Uber", "Amazon").
-        category: The expense type (e.g., "Dining", "Travel", "Utilities").
+        amount: The value of the transaction (must be positive).
+        merchant: The name of the place/service (e.g., "Swiggy", "Amazon", "HP Petrol").
+        category: The expense category. Must be a valid category from the categories resource.
         card_name: The name of the credit card used (must match an existing card).
-        date: Optional date of transaction in 'YYYY-MM-DD' format. Defaults to today.
+        platform: How the payment was made (e.g., "Direct", "SmartBuy", "CRED", "Amazon Pay").
+        date: Optional date in 'YYYY-MM-DD' format. Defaults to today.
 
     Returns:
-        Confirmation message with Transaction ID and calculated points (if applicable).
+        Confirmation message with Transaction ID and points earned.
     """
-    logger.info(
-        f"Adding transaction: {amount} {merchant} {category} {card_name} {date}"
-    )
-    return f"Transaction added successfully."
+    try:
+        # --- Validation ---
+        
+        # 1. Validate amount
+        if amount <= 0:
+            return "❌ Error: Amount must be a positive number."
+
+        # 2. Validate category
+        valid_categories = get_category_names()
+        if category not in valid_categories:
+            return f"❌ Error: Invalid category '{category}'.\n\nValid categories: {', '.join(valid_categories)}"
+
+        # 3. Parse date
+        if date:
+            try:
+                transaction_date = datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                return "❌ Error: Invalid date format. Use YYYY-MM-DD (e.g., 2024-12-25)."
+        else:
+            transaction_date = datetime.now()
+
+        # 4. Find the card
+        with Session(engine) as session:
+            # Search by name (case-insensitive partial match)
+            query = select(CreditCard).where(
+                col(CreditCard.name).ilike(f"%{card_name}%")
+            )
+            cards = session.exec(query).all()
+
+            if not cards:
+                return f"❌ Error: No card found matching '{card_name}'. Use get_my_cards() to see available cards."
+
+            if len(cards) > 1:
+                card_names = [f"- {c.name} (ID: {c.id})" for c in cards]
+                return f"❌ Error: Multiple cards match '{card_name}'. Please be more specific:\n" + "\n".join(card_names)
+
+            card = cards[0]
+
+            # --- Create the Expense ---
+            expense = Expense(
+                amount=amount,
+                merchant=merchant,
+                category=category,
+                platform=platform,
+                date=transaction_date,
+                card_id=card.id,
+                points_earned=0.0,  # TODO: Calculate based on reward rules
+            )
+
+            session.add(expense)
+            session.commit()
+            session.refresh(expense)
+
+            # --- Check if category is excluded ---
+            categories_data = load_categories()
+            is_excluded = any(
+                cat["name"] == category and cat.get("excluded_from_rewards", False)
+                for cat in categories_data["categories"]
+            )
+
+            excluded_note = ""
+            if is_excluded:
+                excluded_note = "\n⚠️ Note: This category is typically excluded from rewards."
+
+            return (
+                f"✅ Transaction Added Successfully!\n\n"
+                f"📝 Details:\n"
+                f"   ID: {expense.id}\n"
+                f"   Amount: ₹{expense.amount:,.2f}\n"
+                f"   Merchant: {expense.merchant}\n"
+                f"   Category: {expense.category}\n"
+                f"   Platform: {expense.platform}\n"
+                f"   Card: {card.name}\n"
+                f"   Date: {expense.date.strftime('%Y-%m-%d')}\n"
+                f"   Points Earned: {expense.points_earned}"
+                f"{excluded_note}"
+            )
+
+    except Exception as e:
+        logger.error(f"Error adding transaction: {str(e)}")
+        logger.error(traceback.format_exc())
+        return f"❌ Error adding transaction: {str(e)}"
 
 
 @mcp.tool()
