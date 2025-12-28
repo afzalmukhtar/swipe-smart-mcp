@@ -121,29 +121,208 @@ def seed():
         ]
         session.add_all(partners)
 
-        # --- E. Create Sample Transactions ---
+        # --- E. Create Sample Transactions (One per Category) ---
 
         today = datetime.now()
         expenses = [
-            # 1. Big Purchase on SmartBuy (₹20,000)
-            # Earns: 20k * 5x = 4000 pts (Fills the monthly bucket!)
+            # Dining
             Expense(
                 card_id=card.id,
-                amount=20000.0,
-                merchant="Amazon India",
-                category="SmartBuy Amazon",
-                platform="SmartBuy",
+                amount=850.0,
+                merchant="Swiggy",
+                category="Dining",
+                platform="Swiggy",
+                date=today - timedelta(days=1),
+            ),
+            # Groceries
+            Expense(
+                card_id=card.id,
+                amount=2500.0,
+                merchant="BigBasket",
+                category="Groceries",
+                platform="Direct",
                 date=today - timedelta(days=2),
             ),
-            # 2. Dining out (₹3,000)
-            # Earns: 3k * 2x = 150 pts (Uncapped)
+            # Travel - Flights
+            Expense(
+                card_id=card.id,
+                amount=12500.0,
+                merchant="MakeMyTrip",
+                category="Travel - Flights",
+                platform="SmartBuy",
+                date=today - timedelta(days=5),
+            ),
+            # Travel - Hotels
+            Expense(
+                card_id=card.id,
+                amount=8000.0,
+                merchant="OYO Rooms",
+                category="Travel - Hotels",
+                platform="Direct",
+                date=today - timedelta(days=7),
+            ),
+            # Travel - Railways
+            Expense(
+                card_id=card.id,
+                amount=1200.0,
+                merchant="IRCTC",
+                category="Travel - Railways",
+                platform="Direct",
+                date=today - timedelta(days=3),
+            ),
+            # Travel - Cabs & Rideshare
+            Expense(
+                card_id=card.id,
+                amount=450.0,
+                merchant="Uber",
+                category="Travel - Cabs & Rideshare",
+                platform="Direct",
+                date=today - timedelta(days=1),
+            ),
+            # Travel - Other
+            Expense(
+                card_id=card.id,
+                amount=3500.0,
+                merchant="Cleartrip",
+                category="Travel - Other",
+                platform="Cleartrip",
+                date=today - timedelta(days=10),
+            ),
+            # Fuel
             Expense(
                 card_id=card.id,
                 amount=3000.0,
-                merchant="Truffles",
-                category="Dining",
+                merchant="HP Petrol Pump",
+                category="Fuel",
+                platform="Direct",
+                date=today - timedelta(days=4),
+            ),
+            # Utilities
+            Expense(
+                card_id=card.id,
+                amount=2800.0,
+                merchant="Tata Power",
+                category="Utilities",
+                platform="CRED",
+                date=today - timedelta(days=6),
+            ),
+            # Telecom & Internet
+            Expense(
+                card_id=card.id,
+                amount=999.0,
+                merchant="Jio Recharge",
+                category="Telecom & Internet",
+                platform="Direct",
+                date=today - timedelta(days=8),
+            ),
+            # Shopping - Online
+            Expense(
+                card_id=card.id,
+                amount=15000.0,
+                merchant="Amazon India",
+                category="Shopping - Online",
+                platform="Amazon Pay",
+                date=today - timedelta(days=3),
+            ),
+            # Shopping - Retail
+            Expense(
+                card_id=card.id,
+                amount=7500.0,
+                merchant="Croma Electronics",
+                category="Shopping - Retail",
+                platform="Direct",
+                date=today - timedelta(days=12),
+            ),
+            # Entertainment
+            Expense(
+                card_id=card.id,
+                amount=1200.0,
+                merchant="BookMyShow",
+                category="Entertainment",
+                platform="BookMyShow",
+                date=today - timedelta(days=2),
+            ),
+            # Healthcare
+            Expense(
+                card_id=card.id,
+                amount=650.0,
+                merchant="1mg",
+                category="Healthcare",
+                platform="Direct",
+                date=today - timedelta(days=9),
+            ),
+            # Education
+            Expense(
+                card_id=card.id,
+                amount=4999.0,
+                merchant="Coursera",
+                category="Education",
+                platform="Direct",
+                date=today - timedelta(days=15),
+            ),
+            # --- Excluded Categories (typically 0 rewards) ---
+            # Insurance
+            Expense(
+                card_id=card.id,
+                amount=25000.0,
+                merchant="HDFC Life Insurance",
+                category="Insurance",
+                platform="Direct",
+                date=today - timedelta(days=20),
+            ),
+            # Government Services
+            Expense(
+                card_id=card.id,
+                amount=5000.0,
+                merchant="Income Tax Portal",
+                category="Government Services",
+                platform="Direct",
+                date=today - timedelta(days=25),
+            ),
+            # Rent
+            Expense(
+                card_id=card.id,
+                amount=35000.0,
+                merchant="CRED Rent Pay",
+                category="Rent",
+                platform="CRED",
+                date=today - timedelta(days=1),
+            ),
+            # Wallet & Prepaid Loads
+            Expense(
+                card_id=card.id,
+                amount=5000.0,
+                merchant="Paytm Wallet",
+                category="Wallet & Prepaid Loads",
+                platform="Direct",
+                date=today - timedelta(days=11),
+            ),
+            # EMI Payments
+            Expense(
+                card_id=card.id,
+                amount=15000.0,
+                merchant="HDFC Bank EMI",
+                category="EMI Payments",
                 platform="Direct",
                 date=today - timedelta(days=5),
+            ),
+            # Jewellery
+            Expense(
+                card_id=card.id,
+                amount=50000.0,
+                merchant="Tanishq",
+                category="Jewellery",
+                platform="Direct",
+                date=today - timedelta(days=30),
+            ),
+            # Other
+            Expense(
+                card_id=card.id,
+                amount=1500.0,
+                merchant="Miscellaneous Shop",
+                category="Other",
+                platform="Direct",
+                date=today - timedelta(days=14),
             ),
         ]
         session.add_all(expenses)
