@@ -1,0 +1,167 @@
+{
+  "version": "1.0",
+  "description": "MCC-based expense categories aligned with credit card reward programs",
+  "categories": [
+    {
+      "id": "dining",
+      "name": "Dining",
+      "description": "Restaurants, cafes, bars, food delivery apps (Swiggy, Zomato)",
+      "mcc_codes": ["5812", "5813", "5814"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "groceries",
+      "name": "Groceries",
+      "description": "Supermarkets, grocery stores, BigBasket, Blinkit, Zepto",
+      "mcc_codes": ["5411", "5422"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "travel_flights",
+      "name": "Travel - Flights",
+      "description": "Airlines, flight bookings, airport services",
+      "mcc_codes": ["3000-3299", "4511"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "travel_hotels",
+      "name": "Travel - Hotels",
+      "description": "Hotels, resorts, lodging, OYO, Airbnb",
+      "mcc_codes": ["3501-3999", "7011"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "travel_railways",
+      "name": "Travel - Railways",
+      "description": "Train tickets, IRCTC, metro recharges",
+      "mcc_codes": ["4011", "4112"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "travel_cabs",
+      "name": "Travel - Cabs & Rideshare",
+      "description": "Uber, Ola, taxi services, auto rickshaws",
+      "mcc_codes": ["4121", "4131"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "travel_other",
+      "name": "Travel - Other",
+      "description": "Car rentals, cruises, travel agencies, MakeMyTrip, Cleartrip",
+      "mcc_codes": ["4411", "4722", "7512", "7513"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "fuel",
+      "name": "Fuel",
+      "description": "Petrol pumps, gas stations, diesel",
+      "mcc_codes": ["5541", "5542"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "utilities",
+      "name": "Utilities",
+      "description": "Electricity, water, piped gas bills",
+      "mcc_codes": ["4900"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "telecom",
+      "name": "Telecom & Internet",
+      "description": "Mobile recharges, broadband, DTH, Jio, Airtel",
+      "mcc_codes": ["4812", "4814", "4816"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "shopping_online",
+      "name": "Shopping - Online",
+      "description": "Amazon, Flipkart, Myntra, e-commerce platforms",
+      "mcc_codes": ["5399", "5999"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "shopping_retail",
+      "name": "Shopping - Retail",
+      "description": "Department stores, malls, clothing, electronics showrooms",
+      "mcc_codes": ["5311", "5611", "5651", "5691", "5732", "5733"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "entertainment",
+      "name": "Entertainment",
+      "description": "Movies, streaming (Netflix, Prime), gaming, concerts, BookMyShow",
+      "mcc_codes": ["7832", "7841", "7922", "7994", "7996"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "healthcare",
+      "name": "Healthcare",
+      "description": "Pharmacies, hospitals, doctors, medical labs, 1mg, PharmEasy",
+      "mcc_codes": ["5122", "5912", "8011", "8021", "8031", "8041", "8042", "8043", "8049", "8050", "8062", "8071", "8099"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "education",
+      "name": "Education",
+      "description": "School fees, universities, online courses, Coursera, Udemy",
+      "mcc_codes": ["8211", "8220", "8241", "8244", "8249", "8299"],
+      "excluded_from_rewards": false
+    },
+    {
+      "id": "insurance",
+      "name": "Insurance",
+      "description": "Life, health, vehicle insurance premiums",
+      "mcc_codes": ["5960", "6300", "6381"],
+      "excluded_from_rewards": true
+    },
+    {
+      "id": "government",
+      "name": "Government Services",
+      "description": "Tax payments, govt fees, fines, passport, visa fees",
+      "mcc_codes": ["9211", "9222", "9223", "9311", "9399", "9402", "9405"],
+      "excluded_from_rewards": true
+    },
+    {
+      "id": "rent",
+      "name": "Rent",
+      "description": "House rent via CRED, NoBroker, PayTM, other platforms",
+      "mcc_codes": ["6513"],
+      "excluded_from_rewards": true
+    },
+    {
+      "id": "wallet_loads",
+      "name": "Wallet & Prepaid Loads",
+      "description": "Paytm wallet, Amazon Pay balance, gift cards",
+      "mcc_codes": ["6540"],
+      "excluded_from_rewards": true
+    },
+    {
+      "id": "emi",
+      "name": "EMI Payments",
+      "description": "Loan EMIs, credit card EMI conversions",
+      "mcc_codes": ["6012", "6051"],
+      "excluded_from_rewards": true
+    },
+    {
+      "id": "jewellery",
+      "name": "Jewellery",
+      "description": "Gold, diamond, jewellery purchases",
+      "mcc_codes": ["5094", "5944"],
+      "excluded_from_rewards": true
+    },
+    {
+      "id": "cash_advance",
+      "name": "Cash Advance",
+      "description": "ATM withdrawals, cash advances on credit card",
+      "mcc_codes": ["6010", "6011"],
+      "excluded_from_rewards": true
+    },
+    {
+      "id": "other",
+      "name": "Other",
+      "description": "Miscellaneous transactions not matching other categories",
+      "mcc_codes": [],
+      "excluded_from_rewards": false
+    }
+  ]
+}
