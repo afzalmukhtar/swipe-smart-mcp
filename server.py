@@ -1,19 +1,227 @@
+import json
 import traceback
 from logging import getLogger
+from pathlib import Path
 from typing import Optional
+from textwrap import dedent
 
 from mcp.server.fastmcp import FastMCP
-from sqlmodel import Session, select, col
+from sqlmodel import Session, col, select
 
 from src.db import engine
 from src.models import CapBucket, CreditCard, Expense, RewardRule
+
+# Path to categories data
+CATEGORIES_FILE = Path(__file__).parent / "data" / "categories.json"
+
+
+def load_categories() -> dict:
+    """Load categories from JSON file."""
+    with open(CATEGORIES_FILE, "r") as f:
+        return json.load(f)
+
+
+def get_category_names() -> list[str]:
+    """Get list of valid category names."""
+    data = load_categories()
+    return [cat["name"] for cat in data["categories"]]
+
 
 logger = getLogger(__name__)
 
 mcp = FastMCP("finance-server")
 
-# database setup
-database = []
+
+# ======================= RESOURCES =======================
+# Resources expose static/dynamic data for LLM clients
+# =========================================================
+
+
+@mcp.resource("finance://categories")
+def list_categories() -> str:
+    """
+    Returns all valid expense categories with their descriptions.
+
+    Use this resource to:
+    1. Know which categories are available for logging transactions.
+    2. Understand what each category covers (e.g., 'Dining' includes food delivery apps).
+    3. Check which categories are typically excluded from rewards.
+    """
+    data = load_categories()
+    return json.dumps(data, indent=2)
+
+
+@mcp.resource("finance://categories/names")
+def list_category_names() -> str:
+    """
+    Returns a simple list of valid category names.
+    Use this for quick validation or selection.
+    """
+    names = get_category_names()
+    return json.dumps(names)
+
+
+@mcp.resource("finance://categories/excluded")
+def list_excluded_categories() -> str:
+    """
+    Returns categories that are typically excluded from credit card rewards.
+    These include: Insurance, Government, Rent, Wallet Loads, EMI, Jewellery, Cash Advance.
+    """
+    data = load_categories()
+    excluded = [
+        cat["name"]
+        for cat in data["categories"]
+        if cat.get("excluded_from_rewards", False)
+    ]
+    return json.dumps(excluded)
+
+
+# ======================== PROMPTS ========================
+# Prompts provide guidance templates for LLM interactions
+# =========================================================
+
+
+@mcp.prompt()
+def log_expense() -> str:
+    """
+    Interactive prompt to help users log a new expense/transaction.
+    Use this when the user wants to record a purchase or payment.
+    """
+    categories = get_category_names()
+    cat_list = "\n".join([f"  - {cat}" for cat in categories])
+
+    excluded = [
+        cat["name"]
+        for cat in load_categories()["categories"]
+        if cat.get("excluded_from_rewards", False)
+    ]
+    excluded_list = ", ".join(excluded)
+
+    return dedent("""
+        # Add New Transaction
+
+        I'll help you log a new expense. Let me gather the details.
+
+        ---
+
+        ## Instructions for Assistant
+
+        Follow these steps IN ORDER to add a transaction:
+
+        ### Step 1: Collect Required Transaction Details
+
+        Ask the user for ALL of these details (if not already provided):
+
+        | Field | Required | Description | Example |
+        |-------|----------|-------------|---------|
+        | **Amount** | ✅ Yes | Transaction value in ₹ | ₹500, 1200 |
+        | **Merchant** | ✅ Yes | Store/service name | "Swiggy", "Amazon", "HP Petrol" |
+        | **Platform** | ✅ Yes | HOW was payment made? | "Direct", "SmartBuy", "Amazon Pay", "CRED" |
+        | **Date** | Optional | When did this happen? | YYYY-MM-DD (default: today) |
+
+        #### Platform Options (CRITICAL for reward calculation!)
+
+        The **platform** determines bonus multipliers. Common platforms:
+
+        | Platform | Description | Cards that benefit |
+        |----------|-------------|-------------------|
+        | **Direct** | Paid directly at merchant (default) | Base rewards only |
+        | **SmartBuy** | HDFC SmartBuy portal | HDFC cards (10x points) |
+        | **Amazon Pay** | Amazon Pay balance/UPI | Amazon Pay ICICI (5% back) |
+        | **Flipkart** | Flipkart app/website | Flipkart Axis (5% back) |
+        | **CRED** | CRED app payments | Various bonus offers |
+        | **PayTM** | PayTM wallet/UPI | PayTM cards |
+        | **PhonePe** | PhonePe app | Various cashback |
+        | **Google Pay** | GPay UPI | Bank-specific offers |
+        | **Swiggy** | Swiggy app direct | Swiggy HDFC (10x on Swiggy) |
+        | **Zomato** | Zomato app direct | Various dining bonuses |
+        | **BookMyShow** | BMS app/website | Entertainment bonuses |
+        | **MakeMyTrip** | MMT portal | Travel card bonuses |
+        | **Cleartrip** | Cleartrip portal | Travel card bonuses |
+
+        **Always ask**: "Did you pay directly, or through any app/portal like SmartBuy, CRED, Amazon Pay?"
+
+        ### Step 2: Determine the Category
+
+        Based on the merchant, select the appropriate category:
+
+        {cat_list}
+
+        **Category Mapping Guide:**
+        | Merchant Type | Category |
+        |---------------|----------|
+        | Swiggy, Zomato, UberEats, Restaurants | Dining |
+        | Amazon, Flipkart, Myntra, Meesho | Shopping - Online |
+        | Malls, Retail stores, Croma, Reliance Digital | Shopping - Retail |
+        | MakeMyTrip flights, Cleartrip flights, Airlines | Travel - Flights |
+        | MakeMyTrip hotels, OYO, Airbnb, Booking.com | Travel - Hotels |
+        | IRCTC, Metro recharge | Travel - Railways |
+        | Uber, Ola, Rapido | Travel - Cabs & Rideshare |
+        | Petrol pumps, HP, Indian Oil, Shell | Fuel |
+        | Netflix, Hotstar, Prime Video, BookMyShow | Entertainment |
+        | BigBasket, Blinkit, Zepto, DMart | Groceries |
+        | 1mg, PharmEasy, Apollo Pharmacy | Healthcare |
+        | Jio, Airtel, Vi, Broadband | Telecom & Internet |
+        | Electricity, Water, Piped Gas | Utilities |
+
+        **If unsure about the category, ASK the user to confirm.**
+
+        ### Step 3: Select the Credit Card
+
+        - Call `get_my_cards()` to see available cards in wallet
+        - Ask user: "Which card did you use for this transaction?"
+        - If only one card exists, confirm with user before proceeding
+
+        ### Step 4: Confirm Before Adding
+
+        Show a complete summary:
+        ```
+        📝 Transaction Summary
+        ━━━━━━━━━━━━━━━━━━━━━
+        Amount:   ₹[amount]
+        Merchant: [merchant]
+        Category: [category]
+        Platform: [platform]
+        Card:     [card_name]
+        Date:     [date]
+        ━━━━━━━━━━━━━━━━━━━━━
+        ```
+        Ask: "Does this look correct? Should I add this transaction?"
+
+        ### Step 5: Add the Transaction
+
+        Once confirmed, call `add_transaction()` tool with:
+        - amount
+        - merchant
+        - category
+        - card_name
+        - platform
+        - date (if provided, else omit for today)
+
+        ---
+
+        ## Important Notes
+
+        **Categories typically EXCLUDED from rewards** (still track, but expect 0 points):
+        {excluded_list}
+
+        **Validation Rules:**
+        - Amount must be a positive number
+        - Category must be from the valid list above
+        - Platform should match known platforms (or "Direct")
+        - Card must exist in the wallet
+
+        ---
+
+        User, please tell me about the transaction you want to add. 
+
+        What did you spend on, how much, and how did you pay?
+        """
+
+
+# ========================= TOOLS =========================
+# Tools allow LLM clients to perform actions
+# =========================================================
 
 
 # --- TOOL 1: Wallet Overviews ---
