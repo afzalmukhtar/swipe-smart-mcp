@@ -342,21 +342,6 @@ def get_transactions(limit: int = 5, category: Optional[str] = None) -> str:
     return "Transactions retrieved successfully."
 
 
-@mcp.tool()
-def delete_transaction(transaction_id: int) -> str:
-    """
-    Deletes a specific transaction record.
-
-    Args:
-        transaction_id: The unique ID of the transaction (found via get_transactions).
-
-    Returns:
-        Success message confirming deletion.
-    """
-    logger.info(f"Deleting transaction: {transaction_id}")
-    return "Transaction deleted successfully."
-
-
 # ----------------- The Points System -----------------
 #       This tracks your points earned per card
 # -----------------------------------------------------
