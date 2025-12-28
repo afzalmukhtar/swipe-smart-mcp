@@ -1,6 +1,6 @@
-from sqlmodel import SQLModel, create_engine, Session
+from sqlmodel import Session, SQLModel, create_engine
 
-from src.models import CreditCard, RewardRule, RedemptionPartner, CapBucket, Expense
+from src.models import CapBucket, CreditCard, Expense, RedemptionPartner, RewardRule
 
 # 1. The Database Name
 sqlite_file_name = "data/finance.db"

@@ -42,15 +42,14 @@ class CreditCard(SQLModel, table=True):
 class CapBucket(SQLModel, table=True):
     """
     Represents a limit container.
-    Example: "SmartBuy Cap" (Max 4000 pts per Statement Cycle)
     """
 
     id: Optional[int] = Field(default=None, primary_key=True)
     card_id: int = Field(foreign_key="creditcard.id")
 
-    name: str  # e.g. "SmartBuy Daily", "Partner Milestone"
-    max_points: float  # e.g. 2000.0
-    period: PeriodType  # DAILY or STATEMENT_CYCLE
+    name: str
+    max_points: float
+    period: PeriodType
 
     # Tracking State
     current_usage: float = 0.0
@@ -58,7 +57,7 @@ class CapBucket(SQLModel, table=True):
 
     # Relationships
     card: CreditCard = Relationship(back_populates="cap_buckets")
-    rules: List["RewardRule"] = Relationship(back_populates="rules")
+    rules: List["RewardRule"] = Relationship(back_populates="cap_bucket")
 
 
 # --- 3. Reward Rules (The "Logic") ---
@@ -69,8 +68,7 @@ class RewardRule(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     card_id: int = Field(foreign_key="creditcard.id")
-
-    category: str  # e.g., "SmartBuy Amazon", "Dining"
+    category: str
 
     # The Math
     base_multiplier: float
@@ -84,9 +82,7 @@ class RewardRule(SQLModel, table=True):
 
     # Relationships
     card: CreditCard = Relationship(back_populates="reward_rules")
-    cap_bucket: Optional[CapBucket] = Relationship(
-        back_populates="rules"
-    )  # Changed back_populates to "rules"
+    cap_bucket: Optional[CapBucket] = Relationship(back_populates="rules")
 
 
 # --- 4. Redemption Partners (The "Value") ---
