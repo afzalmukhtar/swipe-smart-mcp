@@ -105,6 +105,7 @@ class Expense(SQLModel, table=True):
     category: str
     platform: str = "Direct"
 
+    points_earned: float = 0.0
     date: datetime = Field(default_factory=datetime.now)
 
     card_id: Optional[int] = Field(default=None, foreign_key="creditcard.id")
