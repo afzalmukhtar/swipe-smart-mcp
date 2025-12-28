@@ -1,6 +1,12 @@
+import traceback
 from logging import getLogger
 from typing import Optional
+
 from mcp.server.fastmcp import FastMCP
+from sqlmodel import Session, select, col
+
+from src.db import engine
+from src.models import CapBucket, CreditCard, Expense, RewardRule
 
 logger = getLogger(__name__)
 
@@ -8,6 +14,185 @@ mcp = FastMCP("finance-server")
 
 # database setup
 database = []
+
+
+# --- TOOL 1: Wallet Overviews ---
+@mcp.tool()
+def get_my_cards() -> dict:
+    """
+    Retrieves a summary of all credit cards currently stored in the wallet database.
+
+    Use this tool to:
+    1. Find the specific unique 'ID' of a card (required for other tools).
+    2. Check credit limits, remaining limits, and billing cycle dates.
+    3. See the 'Base Value' (floor price) of points for each card.
+
+    Returns:
+        dict: A dictionary of cards, including their ID, Name, Bank, Limit, and Billing Cycle.
+    """
+    try:
+        with Session(engine) as session:
+            statement = select(CreditCard)
+            cards = session.exec(statement).all()
+
+            if not cards:
+                return "Your wallet is empty. No cards found."
+
+            response = {}
+            for card in cards:
+                response[f"{card.name} [ID: {card.id}]"] = {
+                    "bank": card.bank,
+                    "limit": card.monthly_limit,
+                    "base_value": card.base_point_value,
+                    "billing_cycle_start": card.billing_cycle_start,
+                }
+
+            return response
+    except Exception as e:
+        logger.error(f"Error fetching cards: {str(e)}")
+        logger.error(traceback.format_exc())
+        return f"Error fetching cards: {str(e)}"
+
+
+# --- TOOL 2: See Recent Transactions ---
+@mcp.tool()
+def get_recent_transactions() -> dict:
+    """
+    Fetches the log of the 10 most recent transactions recorded in the system.
+
+    Use this tool to:
+    1. Analyze recent spending habits.
+    2. Verify if a specific transaction was successfully logged after an 'add_transaction' call.
+    3. Identify which card was used for specific merchants.
+
+    Returns:
+        dict: A dictionary of the last 10 expenses, showing Amount, Merchant, Date, Platform, and the Card used.
+    """
+    try:
+        with Session(engine) as session:
+            # Get last 10 expenses
+            statement = select(Expense).limit(10).order_by(Expense.date.desc())
+            expenses = session.exec(statement).all()
+
+            if not expenses:
+                return "No transactions found."
+
+            response = {}
+            for txn in expenses:
+                # Safe access to card details
+                if txn.card:
+                    card_info = f"{txn.card.name} [ID: {txn.card.id}]"
+                else:
+                    card_info = "Unknown Card"
+
+                response[txn.id] = {
+                    "merchant": txn.merchant,
+                    "amount": txn.amount,
+                    "platform": txn.platform,
+                    "card": card_info,
+                }
+
+            return response
+    except Exception as e:
+        logger.error(f"Error fetching transactions: {str(e)}")
+        logger.error(traceback.format_exc())
+        return f"Error fetching transactions: {str(e)}"
+
+
+# --- TOOL 3: Get Card Rules ---
+@mcp.tool()
+def get_card_rules(card_identifier: str) -> dict:
+    """
+    Retrieves the detailed reward logic (multipliers, caps, and limits) for specific credit cards.
+
+    Args:
+        card_identifier (str): The search term. Can be:
+            - A specific numeric Card ID (e.g., "1") for a precise lookup.
+            - A partial Card Name (e.g., "HDFC") to find all matching cards.
+
+    Returns:
+        dict: A structured JSON object containing:
+            - 'status': 'success' or 'error'
+            - 'match_count': Number of cards found.
+            - 'cards': A list of matching card details, where each entry includes:
+                - 'rules': List of categories (e.g., 'Dining'), multipliers (Base + Bonus), and any 'capped_by' limits.
+
+    Example:
+        get_card_rules("1") -> Returns rules strictly for Card ID 1.
+        get_card_rules("Regalia") -> Returns rules for all cards containing 'Regalia'.
+    """
+    try:
+        with Session(engine) as session:
+            query = select(CreditCard)
+
+            # 1. Determine if input is an ID or a Name
+            if card_identifier.isdigit():
+                # Search by exact ID
+                query = query.where(CreditCard.id == int(card_identifier))
+            else:
+                # Search by Name (Case-Insensitive Partial Match)
+                # This allows "HDFC" to find both "HDFC Regalia" and "HDFC Infinia"
+                query = query.where(col(CreditCard.name).ilike(f"%{card_identifier}%"))
+
+            results = session.exec(query).all()
+
+            if not results:
+                return {
+                    "status": "error",
+                    "message": f"No cards found matching '{card_identifier}'.",
+                }
+
+            # 2. Build the Structured Dictionary
+            output = {"status": "success", "match_count": len(results), "cards": []}
+
+            for card in results:
+                card_data = {
+                    "id": card.id,
+                    "name": card.name,
+                    "bank": card.bank,
+                    "rules": [],
+                }
+
+                # Format Rules
+                if not card.reward_rules:
+                    card_data["rules"].append(
+                        {
+                            "category": "All Spends",
+                            "description": "Base Rate Only (No special multipliers)",
+                        }
+                    )
+
+                for rule in card.reward_rules:
+                    rule_info = {
+                        "category": rule.category,
+                        "multiplier": f"{rule.base_multiplier}x Base + {rule.bonus_multiplier}x Bonus",
+                        "total_multiplier": rule.base_multiplier
+                        + rule.bonus_multiplier,
+                        "is_capped": False,
+                        "capped_by": None,
+                    }
+
+                    # specific check for cap bucket
+                    if rule.cap_bucket:
+                        rule_info["is_capped"] = True
+                        rule_info["capped_by"] = {
+                            "bucket_name": rule.cap_bucket.name,
+                            "limit": rule.cap_bucket.max_points,
+                            "period": rule.cap_bucket.period,
+                        }
+
+                    card_data["rules"].append(rule_info)
+
+                output["cards"].append(card_data)
+
+            return output
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "traceback": traceback.format_exc(),
+        }
 
 
 # --------------------- Wallet ---------------------
@@ -36,19 +221,6 @@ def add_credit_card(
     """
     logger.info(f"Adding credit card: {name}")
     return f"Credit card '{name}' added successfully."
-
-
-@mcp.tool()
-def get_credit_cards() -> str:
-    """
-    Retrieves a list of all active credit cards.
-
-    Returns:
-        A formatted string listing all cards with their IDs, names, and limits.
-        Useful for finding the 'card_id' or 'name' before adding a transaction.
-    """
-    logger.info("Getting credit cards")
-    return "Credit cards retrieved successfully."
 
 
 @mcp.tool()
