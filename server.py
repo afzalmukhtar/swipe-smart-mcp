@@ -7,7 +7,7 @@ from textwrap import dedent
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
-from sqlmodel import Session, col, select, and_
+from sqlmodel import Session, col, select, and_, or_
 
 from src.db import engine
 from src.models import CapBucket, CreditCard, Expense, RewardRule
@@ -278,91 +278,138 @@ def get_transactions(
     bank: Optional[list[str]] = None,
 ) -> dict:
     """
-    Retrieves transactions based on flexible filters. By default, returns the most recent 10 transactions.
+    Retrieves transactions based on flexible filters.
+
+    Logic:
+    - Multiple values within a filter are treated as OR (e.g., category=['Dining', 'Food'] -> Dining OR Food).
+    - Different filters are treated as AND (e.g., category='Dining' AND card='HDFC').
 
     Args:
-        limit (int): Max number of records to return (default: 10).
+        limit (int): Max number of records to return (default: 5).
         start_date (str): Filter for transactions ON or AFTER this date (Format: YYYY-MM-DD).
         end_date (str): Filter for transactions ON or BEFORE this date (Format: YYYY-MM-DD).
-        category (list[str]): Filter by category name (e.g., "Dining"). Case-insensitive partial match.
-        merchant (list[str]): Filter by merchant name (e.g., "Amazon"). Case-insensitive partial match.
-        card_name (list[str]): Filter by credit card name (e.g., "HDFC"). Case-insensitive partial match.
-        platform (list[str]): Filter by platform name (e.g., "Online"). Case-insensitive partial match.
-        bank (list[str]): Filter by bank name (e.g., "HDFC"). Case-insensitive partial match.
+        category (list[str]): List of categories to match (e.g., ["Dining", "Groceries"]).
+        merchant (list[str]): List of merchants to match (e.g., ["Amazon", "Flipkart"]).
+        card_name (list[str]): List of card names to match (e.g., ["HDFC", "Amex"]).
+        platform (list[str]): List of platforms (e.g., ["Swiggy", "Zomato"]).
+        bank (list[str]): List of banks (e.g., ["HDFC", "SBI"]).
 
     Returns:
         dict: A structured list of matching transactions and a summary count.
     """
-    logger.info(f"Getting transactions: {limit} {category}")
-    # TODO: Step 8: Sort by Date and limit to 'limit'
-    # TODO: Step 9: Add the count of transactions
-    # TODO: Step 10: Return the filtered transactions
+    logger.info(f"Getting transactions with filters: {locals()}")
 
     try:
         with Session(engine) as session:
-            # Step 1: Get every transaction
-            # Joining with Credit Card allows us to filter by card name and banks efficiently
+            # Step 1: Base Query (Join Expense + Card)
             query = select(Expense).join(CreditCard)
 
-            filters = []  # Filter to hold all the filters to the query
+            # This list will store all "AND" conditions
+            and_conditions = []
 
-            # Step 2: Filter by date range
+            # --- Date Filters ---
             if start_date:
                 try:
-                    start_date = datetime.strptime(start_date, "%Y-%m-%d")
-                    filters.append(Expense.date >= start_date)
+                    s_date = datetime.strptime(start_date, "%Y-%m-%d")
+                    and_conditions.append(Expense.date >= s_date)
                 except ValueError:
                     return {
                         "status": "error",
-                        "message": "Invalid start_date format. Use YYYY-MM-DD.",
+                        "message": "Invalid start_date. Use YYYY-MM-DD.",
                     }
 
             if end_date:
                 try:
-                    end_date = datetime.strptime(end_date, "%Y-%m-%d")
-                    filters.append(Expense.date <= end_date)
+                    e_date = datetime.strptime(end_date, "%Y-%m-%d")
+                    # Set time to end of day to include transactions on that day
+                    e_date = e_date.replace(hour=23, minute=59, second=59)
+                    and_conditions.append(Expense.date <= e_date)
                 except ValueError:
                     return {
                         "status": "error",
-                        "message": "Invalid end_date format. Use YYYY-MM-DD.",
+                        "message": "Invalid end_date. Use YYYY-MM-DD.",
                     }
 
-            query = query.filter(*filters)
+            # --- Text Filters (Handling Lists with OR logic) ---
 
-            # Step 3: Filter by case insensitive like merchant
-            if merchant:
-                filters.append(col(Expense.merchant).ilike(f"%{merchant}%"))
+            # Helper function to build OR conditions for a list
+            def build_or_filter(column, values):
+                if not values:
+                    return None
+                # Creates: (col ILIKE '%val1%' OR col ILIKE '%val2%')
+                conditions = [col(column).ilike(f"%{v}%") for v in values]
+                return or_(*conditions)
 
-            # Step 4: Filter by case insensitive like category
             if category:
-                filters.append(col(Expense.category).ilike(f"%{category}%"))
+                cond = build_or_filter(Expense.category, category)
+                if cond is not None:
+                    and_conditions.append(cond)
 
-            # Step 5: Filter by case insensitive like platform
+            if merchant:
+                cond = build_or_filter(Expense.merchant, merchant)
+                if cond is not None:
+                    and_conditions.append(cond)
+
             if platform:
-                filters.append(col(Expense.platform).ilike(f"%{platform}%"))
+                cond = build_or_filter(Expense.platform, platform)
+                if cond is not None:
+                    and_conditions.append(cond)
 
-            # Step 6: Filter by case insensitive like card name
             if card_name:
-                filters.append(col(CreditCard.name).ilike(f"%{card_name}%"))
+                cond = build_or_filter(CreditCard.name, card_name)
+                if cond is not None:
+                    and_conditions.append(cond)
 
-            # Step 7: Filter by case insensitive like bank
             if bank:
-                filters.append(col(CreditCard.bank).ilike(f"%{bank}%"))
+                cond = build_or_filter(CreditCard.bank, bank)
+                if cond is not None:
+                    and_conditions.append(cond)
 
-            query = query.filter(*filters)
+            # --- Apply All Conditions ---
+            if and_conditions:
+                query = query.where(and_(*and_conditions))
+
+            # --- Sorting & Limiting ---
+            query = query.order_by(Expense.date.desc()).limit(limit)
+
+            # --- Execute ---
+            transactions = session.exec(query).all()
+
+            # --- Format Response ---
+            if not transactions:
+                return {
+                    "status": "success",
+                    "message": "No transactions found matching criteria.",
+                    "count": 0,
+                    "transactions": [],
+                }
+
+            txn_list = []
+            for txn in transactions:
+                card_str = txn.card.name if txn.card else "Unknown"
+                txn_list.append(
+                    {
+                        "id": txn.id,
+                        "date": txn.date.strftime("%Y-%m-%d"),
+                        "merchant": txn.merchant,
+                        "amount": txn.amount,
+                        "category": txn.category,
+                        "platform": txn.platform,
+                        "card": card_str,
+                        "points": txn.points_earned,
+                    }
+                )
+
+            return {
+                "status": "success",
+                "count": len(txn_list),
+                "transactions": txn_list,
+            }
 
     except Exception as e:
         logger.error(f"Error fetching transactions: {str(e)}")
         logger.error(traceback.format_exc())
-        return {
-            "status": "error",
-            "message": f"Error fetching transactions: {str(e)}",
-        }
-    return {
-        "status": "success",
-        "count": 0,
-        "transactions": [],
-    }
+        return {"status": "error", "message": f"System error: {str(e)}"}
 
 
 # --- TOOL 3: Get Card Rules ---
@@ -538,6 +585,135 @@ def delete_credit_card(card_id: int) -> str:
         )
 
 
+# --- TOOL 6: Add Transaction ---
+@mcp.tool()
+def add_transaction(
+    amount: float,
+    merchant: str,
+    category: str,
+    card_name: str,
+    platform: str = "Direct",
+    date: Optional[str] = None,
+) -> dict:
+    """
+    Logs a new expense (transaction) to the database.
+
+    Args:
+        amount: The value of the transaction (must be positive).
+        merchant: The name of the place/service (e.g., "Swiggy", "Amazon").
+        category: The expense category. Must be a valid category.
+        card_name: The name of the credit card used.
+        platform: How the payment was made (e.g., "Direct", "SmartBuy").
+        date: Optional date in 'YYYY-MM-DD' format. Defaults to today.
+
+    Returns:
+        dict: Confirmation details including Transaction ID and status.
+    """
+    try:
+        # --- Validation ---
+
+        # 1. Validate amount
+        if amount <= 0:
+            return {"status": "error", "message": "Amount must be positive."}
+
+        # 2. Validate category
+        valid_categories = get_category_names()
+        if category not in valid_categories:
+            return {
+                "status": "error",
+                "message": f"Invalid category '{category}'.",
+                "valid_categories": valid_categories,
+            }
+
+        # 3. Parse date
+        if date:
+            try:
+                transaction_date = datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                return {
+                    "status": "error",
+                    "message": "Invalid date format. Use YYYY-MM-DD.",
+                }
+        else:
+            transaction_date = datetime.now()
+
+        # 4. Find the card
+        with Session(engine) as session:
+            query = select(CreditCard).where(
+                col(CreditCard.name).ilike(f"%{card_name}%")
+            )
+            cards = session.exec(query).all()
+
+            if not cards:
+                return {
+                    "status": "error",
+                    "message": f"Card matching '{card_name}' not found.",
+                }
+
+            if len(cards) > 1:
+                matches = [{"id": c.id, "name": c.name} for c in cards]
+                return {
+                    "status": "error",
+                    "message": "Multiple cards found. Please be specific.",
+                    "matches": matches,
+                }
+
+            card = cards[0]
+
+            # --- 5. Calculate Points (THE BRAIN - Coming Next!) ---
+            # For now, we set it to 0.0, but in the next step, we will call:
+            # points_earned = calculate_points(card, amount, category, platform, transaction_date)
+            points_earned = 0.0
+
+            # --- 6. Create the Expense ---
+            expense = Expense(
+                amount=amount,
+                merchant=merchant,
+                category=category,
+                platform=platform,
+                date=transaction_date,
+                card_id=card.id,
+                points_earned=points_earned,
+            )
+
+            session.add(expense)
+            session.commit()
+            session.refresh(expense)
+
+            # --- Check for Exclusion (for the user warning) ---
+            categories_data = load_categories()
+            is_excluded = any(
+                cat["name"] == category and cat.get("excluded_from_rewards", False)
+                for cat in categories_data["categories"]
+            )
+
+            return {
+                "status": "success",
+                "message": "Transaction added successfully.",
+                "transaction": {
+                    "id": expense.id,
+                    "date": expense.date.strftime("%Y-%m-%d"),
+                    "merchant": expense.merchant,
+                    "amount": expense.amount,
+                    "category": expense.category,
+                    "platform": expense.platform,
+                    "card": card.name,
+                    "points_earned": expense.points_earned,
+                },
+                "meta": {
+                    "is_excluded_category": is_excluded,
+                    "note": "Points calculation pending implementation."
+                    if points_earned == 0
+                    else "Points calculated.",
+                },
+            }
+
+    except Exception as e:
+        logger.error(f"Error adding transaction: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {"status": "error", "message": str(e)}
+
+
 # --------------------- Wallet ---------------------
 # This is the main wallet that contains your credit cards
 # --------------------------------------------------
@@ -564,123 +740,6 @@ def add_credit_card(
     """
     logger.info(f"Adding credit card: {name}")
     return f"Credit card '{name}' added successfully."
-
-
-# --------------------- Transactions ---------------------
-# Log and track expenses across your credit cards
-# --------------------------------------------------------
-@mcp.tool()
-def add_transaction(
-    amount: float,
-    merchant: str,
-    category: str,
-    card_name: str,
-    platform: str = "Direct",
-    date: Optional[str] = None,
-) -> str:
-    """
-    Logs a new expense (transaction) to the database.
-
-    Args:
-        amount: The value of the transaction (must be positive).
-        merchant: The name of the place/service (e.g., "Swiggy", "Amazon", "HP Petrol").
-        category: The expense category. Must be a valid category from the categories resource.
-        card_name: The name of the credit card used (must match an existing card).
-        platform: How the payment was made (e.g., "Direct", "SmartBuy", "CRED", "Amazon Pay").
-        date: Optional date in 'YYYY-MM-DD' format. Defaults to today.
-
-    Returns:
-        Confirmation message with Transaction ID and points earned.
-    """
-    try:
-        # --- Validation ---
-
-        # 1. Validate amount
-        if amount <= 0:
-            return "❌ Error: Amount must be a positive number."
-
-        # 2. Validate category
-        valid_categories = get_category_names()
-        if category not in valid_categories:
-            return f"❌ Error: Invalid category '{category}'.\n\nValid categories: {', '.join(valid_categories)}"
-
-        # 3. Parse date
-        if date:
-            try:
-                transaction_date = datetime.strptime(date, "%Y-%m-%d")
-            except ValueError:
-                return (
-                    "❌ Error: Invalid date format. Use YYYY-MM-DD (e.g., 2024-12-25)."
-                )
-        else:
-            transaction_date = datetime.now()
-
-        # 4. Find the card
-        with Session(engine) as session:
-            # Search by name (case-insensitive partial match)
-            query = select(CreditCard).where(
-                col(CreditCard.name).ilike(f"%{card_name}%")
-            )
-            cards = session.exec(query).all()
-
-            if not cards:
-                return f"❌ Error: No card found matching '{card_name}'. Use get_my_cards() to see available cards."
-
-            if len(cards) > 1:
-                card_names = [f"- {c.name} (ID: {c.id})" for c in cards]
-                return (
-                    f"❌ Error: Multiple cards match '{card_name}'. Please be more specific:\n"
-                    + "\n".join(card_names)
-                )
-
-            card = cards[0]
-
-            # --- Create the Expense ---
-            expense = Expense(
-                amount=amount,
-                merchant=merchant,
-                category=category,
-                platform=platform,
-                date=transaction_date,
-                card_id=card.id,
-                points_earned=0.0,  # TODO: Calculate based on reward rules
-            )
-
-            session.add(expense)
-            session.commit()
-            session.refresh(expense)
-
-            # --- Check if category is excluded ---
-            categories_data = load_categories()
-            is_excluded = any(
-                cat["name"] == category and cat.get("excluded_from_rewards", False)
-                for cat in categories_data["categories"]
-            )
-
-            excluded_note = ""
-            if is_excluded:
-                excluded_note = (
-                    "\n⚠️ Note: This category is typically excluded from rewards."
-                )
-
-            return (
-                f"✅ Transaction Added Successfully!\n\n"
-                f"📝 Details:\n"
-                f"   ID: {expense.id}\n"
-                f"   Amount: ₹{expense.amount:,.2f}\n"
-                f"   Merchant: {expense.merchant}\n"
-                f"   Category: {expense.category}\n"
-                f"   Platform: {expense.platform}\n"
-                f"   Card: {card.name}\n"
-                f"   Date: {expense.date.strftime('%Y-%m-%d')}\n"
-                f"   Points Earned: {expense.points_earned}"
-                f"{excluded_note}"
-            )
-
-    except Exception as e:
-        logger.error(f"Error adding transaction: {str(e)}")
-        logger.error(traceback.format_exc())
-        return f"❌ Error adding transaction: {str(e)}"
 
 
 # ----------------- The Points System -----------------
