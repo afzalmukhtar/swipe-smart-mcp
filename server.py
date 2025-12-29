@@ -294,11 +294,6 @@ def get_transactions(
         dict: A structured list of matching transactions and a summary count.
     """
     logger.info(f"Getting transactions: {limit} {category}")
-    # TODO: Step 3: Filter by merchant
-    # TODO: Step 4: Filter by category
-    # TODO: Step 5: Filter by platform
-    # TODO: Step 6: Filter by card name
-    # TODO: Step 7: Filter by bank
     # TODO: Step 8: Sort by Date and limit to 'limit'
     # TODO: Step 9: Add the count of transactions
     # TODO: Step 10: Return the filtered transactions
@@ -331,6 +326,28 @@ def get_transactions(
                         "status": "error",
                         "message": "Invalid end_date format. Use YYYY-MM-DD.",
                     }
+
+            query = query.filter(*filters)
+
+            # Step 3: Filter by case insensitive like merchant
+            if merchant:
+                filters.append(col(Expense.merchant).ilike(f"%{merchant}%"))
+
+            # Step 4: Filter by case insensitive like category
+            if category:
+                filters.append(col(Expense.category).ilike(f"%{category}%"))
+
+            # Step 5: Filter by case insensitive like platform
+            if platform:
+                filters.append(col(Expense.platform).ilike(f"%{platform}%"))
+
+            # Step 6: Filter by case insensitive like card name
+            if card_name:
+                filters.append(col(CreditCard.name).ilike(f"%{card_name}%"))
+
+            # Step 7: Filter by case insensitive like bank
+            if bank:
+                filters.append(col(CreditCard.bank).ilike(f"%{bank}%"))
 
             query = query.filter(*filters)
 
