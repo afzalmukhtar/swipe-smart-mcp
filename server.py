@@ -7,7 +7,7 @@ from textwrap import dedent
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, select, and_
 
 from src.db import engine
 from src.models import CapBucket, CreditCard, Expense, RewardRule
@@ -99,7 +99,7 @@ def log_expense() -> str:
     excluded_list = ", ".join(excluded)
 
     return dedent(
-    """
+        f"""
         # Add New Transaction
 
         I'll help you log a new expense. Let me gather the details.
@@ -219,7 +219,7 @@ def log_expense() -> str:
 
         What did you spend on, how much, and how did you pay?
     """
-    
+    )
 
 
 # ========================= TOOLS =========================
@@ -265,49 +265,49 @@ def get_my_cards() -> dict:
         return f"Error fetching cards: {str(e)}"
 
 
-# --- TOOL 2: See Recent Transactions ---
+# --- TOOL 2: See Transactions ---
 @mcp.tool()
-def get_recent_transactions() -> dict:
+def get_transactions(
+    limit: int = 5,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    category: Optional[list[str]] = None,
+    merchant: Optional[list[str]] = None,
+    card_name: Optional[list[str]] = None,
+    platform: Optional[list[str]] = None,
+    bank: Optional[list[str]] = None,
+) -> dict:
     """
-    Fetches the log of the 10 most recent transactions recorded in the system.
+    Retrieves transactions based on flexible filters. By default, returns the most recent 10 transactions.
 
-    Use this tool to:
-    1. Analyze recent spending habits.
-    2. Verify if a specific transaction was successfully logged after an 'add_transaction' call.
-    3. Identify which card was used for specific merchants.
+    Args:
+        limit (int): Max number of records to return (default: 10).
+        start_date (str): Filter for transactions ON or AFTER this date (Format: YYYY-MM-DD).
+        end_date (str): Filter for transactions ON or BEFORE this date (Format: YYYY-MM-DD).
+        category (list[str]): Filter by category name (e.g., "Dining"). Case-insensitive partial match.
+        merchant (list[str]): Filter by merchant name (e.g., "Amazon"). Case-insensitive partial match.
+        card_name (list[str]): Filter by credit card name (e.g., "HDFC"). Case-insensitive partial match.
+        platform (list[str]): Filter by platform name (e.g., "Online"). Case-insensitive partial match.
+        bank (list[str]): Filter by bank name (e.g., "HDFC"). Case-insensitive partial match.
 
     Returns:
-        dict: A dictionary of the last 10 expenses, showing Amount, Merchant, Date, Platform, and the Card used.
+        dict: A structured list of matching transactions and a summary count.
     """
-    try:
-        with Session(engine) as session:
-            # Get last 10 expenses
-            statement = select(Expense).limit(10).order_by(Expense.date.desc())
-            expenses = session.exec(statement).all()
-
-            if not expenses:
-                return "No transactions found."
-
-            response = {}
-            for txn in expenses:
-                # Safe access to card details
-                if txn.card:
-                    card_info = f"{txn.card.name} [ID: {txn.card.id}]"
-                else:
-                    card_info = "Unknown Card"
-
-                response[f"Txn ID: {txn.id}"] = {
-                    "merchant": txn.merchant,
-                    "amount": txn.amount,
-                    "platform": txn.platform,
-                    "card": card_info,
-                }
-
-            return response
-    except Exception as e:
-        logger.error(f"Error fetching transactions: {str(e)}")
-        logger.error(traceback.format_exc())
-        return f"Error fetching transactions: {str(e)}"
+    logger.info(f"Getting transactions: {limit} {category}")
+    # TODO: Step 1: Get every transaction
+    # TODO: Step 2: Filter by date range
+    # TODO: Step 3: Filter by merchant
+    # TODO: Step 4: Filter by category
+    # TODO: Step 5: Filter by platform
+    # TODO: Step 6: Filter by card name
+    # TODO: Step 7: Filter by bank
+    # TODO: Step 8: Sort by Date and limit to 'limit'
+    # TODO: Step 9: Return the filtered transactions
+    return {
+        "status": "success",
+        "count": 0,
+        "transactions": [],
+    }
 
 
 # --- TOOL 3: Get Card Rules ---
@@ -539,7 +539,7 @@ def add_transaction(
     """
     try:
         # --- Validation ---
-        
+
         # 1. Validate amount
         if amount <= 0:
             return "❌ Error: Amount must be a positive number."
@@ -554,7 +554,9 @@ def add_transaction(
             try:
                 transaction_date = datetime.strptime(date, "%Y-%m-%d")
             except ValueError:
-                return "❌ Error: Invalid date format. Use YYYY-MM-DD (e.g., 2024-12-25)."
+                return (
+                    "❌ Error: Invalid date format. Use YYYY-MM-DD (e.g., 2024-12-25)."
+                )
         else:
             transaction_date = datetime.now()
 
@@ -571,7 +573,10 @@ def add_transaction(
 
             if len(cards) > 1:
                 card_names = [f"- {c.name} (ID: {c.id})" for c in cards]
-                return f"❌ Error: Multiple cards match '{card_name}'. Please be more specific:\n" + "\n".join(card_names)
+                return (
+                    f"❌ Error: Multiple cards match '{card_name}'. Please be more specific:\n"
+                    + "\n".join(card_names)
+                )
 
             card = cards[0]
 
@@ -599,7 +604,9 @@ def add_transaction(
 
             excluded_note = ""
             if is_excluded:
-                excluded_note = "\n⚠️ Note: This category is typically excluded from rewards."
+                excluded_note = (
+                    "\n⚠️ Note: This category is typically excluded from rewards."
+                )
 
             return (
                 f"✅ Transaction Added Successfully!\n\n"
@@ -619,22 +626,6 @@ def add_transaction(
         logger.error(f"Error adding transaction: {str(e)}")
         logger.error(traceback.format_exc())
         return f"❌ Error adding transaction: {str(e)}"
-
-
-@mcp.tool()
-def get_transactions(limit: int = 5, category: Optional[str] = None) -> str:
-    """
-    Fetches the most recent transactions from the history.
-
-    Args:
-        limit: The number of transactions to return (default: 5).
-        category: Optional filter to see expenses only for a specific category (e.g., "Food").
-
-    Returns:
-        A table-like string of transactions showing Date, Merchant, Amount, and Card.
-    """
-    logger.info(f"Getting transactions: {limit} {category}")
-    return "Transactions retrieved successfully."
 
 
 # ----------------- The Points System -----------------
