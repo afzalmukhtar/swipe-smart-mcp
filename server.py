@@ -294,15 +294,53 @@ def get_transactions(
         dict: A structured list of matching transactions and a summary count.
     """
     logger.info(f"Getting transactions: {limit} {category}")
-    # TODO: Step 1: Get every transaction
-    # TODO: Step 2: Filter by date range
     # TODO: Step 3: Filter by merchant
     # TODO: Step 4: Filter by category
     # TODO: Step 5: Filter by platform
     # TODO: Step 6: Filter by card name
     # TODO: Step 7: Filter by bank
     # TODO: Step 8: Sort by Date and limit to 'limit'
-    # TODO: Step 9: Return the filtered transactions
+    # TODO: Step 9: Add the count of transactions
+    # TODO: Step 10: Return the filtered transactions
+
+    try:
+        with Session(engine) as session:
+            # Step 1: Get every transaction
+            # Joining with Credit Card allows us to filter by card name and banks efficiently
+            query = select(Expense).join(CreditCard)
+
+            filters = []  # Filter to hold all the filters to the query
+
+            # Step 2: Filter by date range
+            if start_date:
+                try:
+                    start_date = datetime.strptime(start_date, "%Y-%m-%d")
+                    filters.append(Expense.date >= start_date)
+                except ValueError:
+                    return {
+                        "status": "error",
+                        "message": "Invalid start_date format. Use YYYY-MM-DD.",
+                    }
+
+            if end_date:
+                try:
+                    end_date = datetime.strptime(end_date, "%Y-%m-%d")
+                    filters.append(Expense.date <= end_date)
+                except ValueError:
+                    return {
+                        "status": "error",
+                        "message": "Invalid end_date format. Use YYYY-MM-DD.",
+                    }
+
+            query = query.filter(*filters)
+
+    except Exception as e:
+        logger.error(f"Error fetching transactions: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "message": f"Error fetching transactions: {str(e)}",
+        }
     return {
         "status": "success",
         "count": 0,
