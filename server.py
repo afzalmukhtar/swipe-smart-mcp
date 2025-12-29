@@ -77,154 +77,68 @@ def list_excluded_categories() -> str:
     return json.dumps(excluded)
 
 
-# ======================== PROMPTS ========================
-# Prompts provide guidance templates for LLM interactions
-# =========================================================
-
-
-@mcp.prompt()
-def log_expense() -> str:
-    """
-    Interactive prompt to help users log a new expense/transaction.
-    Use this when the user wants to record a purchase or payment.
-    """
-    categories = get_category_names()
-    cat_list = "\n".join([f"  - {cat}" for cat in categories])
-
-    excluded = [
-        cat["name"]
-        for cat in load_categories()["categories"]
-        if cat.get("excluded_from_rewards", False)
-    ]
-    excluded_list = ", ".join(excluded)
-
-    return dedent(
-        f"""
-        # Add New Transaction
-
-        I'll help you log a new expense. Let me gather the details.
-
-        ---
-
-        ## Instructions for Assistant
-
-        Follow these steps IN ORDER to add a transaction:
-
-        ### Step 1: Collect Required Transaction Details
-
-        Ask the user for ALL of these details (if not already provided):
-
-        | Field | Required | Description | Example |
-        |-------|----------|-------------|---------|
-        | **Amount** | ✅ Yes | Transaction value in ₹ | ₹500, 1200 |
-        | **Merchant** | ✅ Yes | Store/service name | "Swiggy", "Amazon", "HP Petrol" |
-        | **Platform** | ✅ Yes | HOW was payment made? | "Direct", "SmartBuy", "Amazon Pay", "CRED" |
-        | **Date** | Optional | When did this happen? | YYYY-MM-DD (default: today) |
-
-        #### Platform Options (CRITICAL for reward calculation!)
-
-        The **platform** determines bonus multipliers. Common platforms:
-
-        | Platform | Description | Cards that benefit |
-        |----------|-------------|-------------------|
-        | **Direct** | Paid directly at merchant (default) | Base rewards only |
-        | **SmartBuy** | HDFC SmartBuy portal | HDFC cards (10x points) |
-        | **Amazon Pay** | Amazon Pay balance/UPI | Amazon Pay ICICI (5% back) |
-        | **Flipkart** | Flipkart app/website | Flipkart Axis (5% back) |
-        | **CRED** | CRED app payments | Various bonus offers |
-        | **PayTM** | PayTM wallet/UPI | PayTM cards |
-        | **PhonePe** | PhonePe app | Various cashback |
-        | **Google Pay** | GPay UPI | Bank-specific offers |
-        | **Swiggy** | Swiggy app direct | Swiggy HDFC (10x on Swiggy) |
-        | **Zomato** | Zomato app direct | Various dining bonuses |
-        | **BookMyShow** | BMS app/website | Entertainment bonuses |
-        | **MakeMyTrip** | MMT portal | Travel card bonuses |
-        | **Cleartrip** | Cleartrip portal | Travel card bonuses |
-
-        **Always ask**: "Did you pay directly, or through any app/portal like SmartBuy, CRED, Amazon Pay?"
-
-        ### Step 2: Determine the Category
-
-        Based on the merchant, select the appropriate category:
-
-        {cat_list}
-
-        **Category Mapping Guide:**
-        | Merchant Type | Category |
-        |---------------|----------|
-        | Swiggy, Zomato, UberEats, Restaurants | Dining |
-        | Amazon, Flipkart, Myntra, Meesho | Shopping - Online |
-        | Malls, Retail stores, Croma, Reliance Digital | Shopping - Retail |
-        | MakeMyTrip flights, Cleartrip flights, Airlines | Travel - Flights |
-        | MakeMyTrip hotels, OYO, Airbnb, Booking.com | Travel - Hotels |
-        | IRCTC, Metro recharge | Travel - Railways |
-        | Uber, Ola, Rapido | Travel - Cabs & Rideshare |
-        | Petrol pumps, HP, Indian Oil, Shell | Fuel |
-        | Netflix, Hotstar, Prime Video, BookMyShow | Entertainment |
-        | BigBasket, Blinkit, Zepto, DMart | Groceries |
-        | 1mg, PharmEasy, Apollo Pharmacy | Healthcare |
-        | Jio, Airtel, Vi, Broadband | Telecom & Internet |
-        | Electricity, Water, Piped Gas | Utilities |
-
-        **If unsure about the category, ASK the user to confirm.**
-
-        ### Step 3: Select the Credit Card
-
-        - Call `get_my_cards()` to see available cards in wallet
-        - Ask user: "Which card did you use for this transaction?"
-        - If only one card exists, confirm with user before proceeding
-
-        ### Step 4: Confirm Before Adding
-
-        Show a complete summary:
-        ```
-        📝 Transaction Summary
-        ━━━━━━━━━━━━━━━━━━━━━
-        Amount:   ₹[amount]
-        Merchant: [merchant]
-        Category: [category]
-        Platform: [platform]
-        Card:     [card_name]
-        Date:     [date]
-        ━━━━━━━━━━━━━━━━━━━━━
-        ```
-        Ask: "Does this look correct? Should I add this transaction?"
-
-        ### Step 5: Add the Transaction
-
-        Once confirmed, call `add_transaction()` tool with:
-        - amount
-        - merchant
-        - category
-        - card_name
-        - platform
-        - date (if provided, else omit for today)
-
-        ---
-
-        ## Important Notes
-
-        **Categories typically EXCLUDED from rewards** (still track, but expect 0 points):
-        {excluded_list}
-
-        **Validation Rules:**
-        - Amount must be a positive number
-        - Category must be from the valid list above
-        - Platform should match known platforms (or "Direct")
-        - Card must exist in the wallet
-
-        ---
-
-        User, please tell me about the transaction you want to add. 
-
-        What did you spend on, how much, and how did you pay?
-    """
-    )
-
-
 # ========================= TOOLS =========================
 # Tools allow LLM clients to perform actions
 # =========================================================
+
+
+@mcp.tool()
+def get_expense_logging_rules() -> dict:
+    """
+    **IMPORTANT: Call this tool BEFORE adding any expense.**
+
+    Returns the guidelines and rules for logging expenses, including:
+    - Required fields and their formats
+    - Valid categories
+    - Smart inference rules
+    - How to handle missing information
+
+    You MUST read these guidelines before calling `add_transaction`.
+    """
+    try:
+        categories = get_category_names()
+        cat_list = ", ".join(categories)
+
+        all_cats = load_categories()["categories"]
+        excluded = [
+            c["name"] for c in all_cats if c.get("excluded_from_rewards", False)
+        ]
+        excluded_str = ", ".join(excluded)
+    except Exception:
+        cat_list = "Dining, Groceries, Fuel, Travel"
+        excluded_str = "Fuel, Insurance"
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    return {
+        "status": "success",
+        "today": today,
+        "required_fields": {
+            "amount": "Transaction value (e.g., 500, ₹200)",
+            "merchant": "Where money was spent (e.g., Starbucks, Amazon)",
+            "category": f"One of: {cat_list}",
+            "card_name": "Which credit card was used",
+        },
+        "optional_fields": {
+            "platform": "Default 'Direct'. Options: Direct, SmartBuy, Amazon Pay, CRED, Swiggy, Zomato",
+            "date": f"Default '{today}'. Format: YYYY-MM-DD",
+        },
+        "inference_rules": {
+            "Starbucks/Cafe/Coffee": "Category → Dining",
+            "Swiggy/Zomato": "Category → Dining, Platform → Swiggy or Zomato",
+            "Amazon": "Category → Shopping",
+            "Uber/Ola": "Category → Travel",
+        },
+        "excluded_from_rewards": excluded_str,
+        "behavior_rules": [
+            "Parse the user's message first and extract all available details.",
+            "If you found data: show what you extracted with ✅ provided, ✨ inferred, ❌ missing.",
+            "Only ask for fields that are missing AND required.",
+            "NEVER re-ask for information already provided by the user.",
+            "If no parseable data: say 'I couldn't find expense details. Please provide: amount, merchant, and card.'",
+            "Call add_transaction ONLY after user confirms the final summary.",
+        ],
+    }
 
 
 # --- TOOL 1: Wallet Overviews ---
@@ -598,10 +512,12 @@ def add_transaction(
     """
     Logs a new expense (transaction) to the database.
 
+    **IMPORTANT: Call `get_expense_logging_rules` first to learn the rules for parsing user input.**
+
     Args:
         amount: The value of the transaction (must be positive).
         merchant: The name of the place/service (e.g., "Swiggy", "Amazon").
-        category: The expense category. Must be a valid category.
+        category: The expense category. Must be a valid category from get_expense_logging_rules.
         card_name: The name of the credit card used.
         platform: How the payment was made (e.g., "Direct", "SmartBuy").
         date: Optional date in 'YYYY-MM-DD' format. Defaults to today.
