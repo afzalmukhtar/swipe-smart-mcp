@@ -7,10 +7,11 @@ from textwrap import dedent
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
-from sqlmodel import Session, col, select, and_, or_
+from sqlmodel import Session, and_, col, or_, select
 
 from src.db import engine
 from src.models import CapBucket, CreditCard, Expense, RewardRule
+from src.rewards import calculate_rewards
 
 # Path to categories data
 CATEGORIES_FILE = Path(__file__).parent / "data" / "categories.json"
@@ -576,12 +577,11 @@ def add_transaction(
 
             card = cards[0]
 
-            # --- 5. Calculate Points (THE BRAIN - Coming Next!) ---
-            # For now, we set it to 0.0, but in the next step, we will call:
-            # points_earned = calculate_points(card, amount, category, platform, transaction_date)
-            points_earned = 0.0
+            # --- 5. Calculate Points (THE BRAIN) ---
+            # Create object first so we have the ID (if needed) but we need to compute rewards
+            # The rewards engine needs the expense to be linked to the card.
+            # We create a temporary expense object or just an uncommited one.
 
-            # --- 6. Create the Expense ---
             expense = Expense(
                 amount=amount,
                 merchant=merchant,
@@ -589,8 +589,19 @@ def add_transaction(
                 platform=platform,
                 date=transaction_date,
                 card_id=card.id,
-                points_earned=points_earned,
+                points_earned=0.0,
             )
+
+            # Link the card object so the relationship is available immediately
+            expense.card = card
+
+            # Calculate Rewards
+            reward_result = calculate_rewards(session, expense)
+            expense.points_earned = reward_result.total_points
+
+            # Save breakdown in notes
+            if reward_result.breakdown:
+                expense.notes = "\n".join(reward_result.breakdown)
 
             session.add(expense)
             session.commit()
@@ -618,9 +629,7 @@ def add_transaction(
                 },
                 "meta": {
                     "is_excluded_category": is_excluded,
-                    "note": "Points calculation pending implementation."
-                    if points_earned == 0
-                    else "Points calculated.",
+                    "reward_breakdown": reward_result.breakdown,
                 },
             }
 
