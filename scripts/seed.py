@@ -71,15 +71,13 @@ MERCHANTS_BY_CATEGORY = {
     "Travel - Cabs & Rideshare": ["Uber", "Ola", "Rapido", "BluSmart"],
     "Fuel": ["HP Petrol Pump", "Indian Oil", "Shell", "Bharat Petroleum"],
     "Utilities": ["BESCOM", "Tata Power", "Mahanagar Gas", "Water Board"],
-    "Shopping - Online": [
+    "Shopping": [
         "Amazon India",
         "Flipkart",
         "Myntra",
         "Tata Cliq",
         "Nykaa",
         "Ajio",
-    ],
-    "Shopping - Retail": [
         "Zara",
         "H&M",
         "Croma",
@@ -156,11 +154,12 @@ def get_card_definitions():
                     "min_spend": 0,
                 },
                 {
-                    "category": "Shopping - Online",
+                    "category": "Shopping",
                     "base": 2.0,
                     "bonus": 3.0,
                     "bucket_idx": 0,
                     "min_spend": 0,
+                    "condition": "expense.is_online == True",
                 },
                 # Dining (4x, separate cap)
                 {
@@ -186,7 +185,7 @@ def get_card_definitions():
                     "min_spend": 0,
                 },
                 {
-                    "category": "Shopping - Retail",
+                    "category": "Shopping",
                     "base": 2.0,
                     "bonus": 0.0,
                     "bucket_idx": None,
@@ -266,103 +265,18 @@ def get_card_definitions():
                 ),
             ],
             "rules": [
-                # 5% Online (capped at 5000/month)
+                # 5% on ANY Online Transaction (inferred or explicit)
                 {
-                    "category": "Shopping - Online",
-                    "base": 5.0,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Travel - Flights",
-                    "base": 5.0,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Entertainment",
-                    "base": 5.0,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                # Specific Online Merchants (5%)
-                {
-                    "category": "Uber",
+                    "category": "Any",
                     "base": 0.05,
                     "bonus": 0.0,
                     "bucket_idx": 0,
                     "min_spend": 0,
+                    "condition": "expense.is_online == True",
                 },
-                {
-                    "category": "Swiggy",
-                    "base": 0.05,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Amazon",
-                    "base": 0.05,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Ola",
-                    "base": 0.05,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Zomato",
-                    "base": 0.05,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Blinkit",
-                    "base": 0.05,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Zepto",
-                    "base": 0.05,
-                    "bonus": 0.0,
-                    "bucket_idx": 0,
-                    "min_spend": 0,
-                },
-                # Base Rate (1%)
+                # Base Rule (1%)
                 {
                     "category": "Base",
-                    "base": 0.01,
-                    "bonus": 0.0,
-                    "bucket_idx": None,
-                    "min_spend": 0,
-                },
-                # 1% Offline
-                {
-                    "category": "Shopping - Retail",
-                    "base": 0.01,
-                    "bonus": 0.0,
-                    "bucket_idx": None,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Dining",
-                    "base": 0.01,
-                    "bonus": 0.0,
-                    "bucket_idx": None,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Groceries",
                     "base": 0.01,
                     "bonus": 0.0,
                     "bucket_idx": None,
@@ -451,14 +365,7 @@ def get_card_definitions():
                 },
                 # 2% Base
                 {
-                    "category": "Shopping - Online",
-                    "base": 2.0,
-                    "bonus": 0.0,
-                    "bucket_idx": None,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Shopping - Retail",
+                    "category": "Shopping",
                     "base": 2.0,
                     "bonus": 0.0,
                     "bucket_idx": None,
@@ -558,14 +465,7 @@ def get_card_definitions():
                 },
                 # 2x on Shopping
                 {
-                    "category": "Shopping - Online",
-                    "base": 1.0,
-                    "bonus": 1.0,
-                    "bucket_idx": None,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Shopping - Retail",
+                    "category": "Shopping",
                     "base": 1.0,
                     "bonus": 1.0,
                     "bucket_idx": None,
@@ -659,7 +559,7 @@ def get_card_definitions():
             "rules": [
                 # 5% on Amazon (Condition: is_prime == True)
                 {
-                    "category": "Shopping - Online",
+                    "category": "Amazon India",
                     "base": 2.0,
                     "bonus": 3.0,
                     "bucket_idx": 0,
@@ -693,7 +593,7 @@ def get_card_definitions():
                     "condition": None,
                 },
                 {
-                    "category": "Shopping - Retail",
+                    "category": "Shopping",
                     "base": 1.0,
                     "bonus": 0.0,
                     "bucket_idx": None,
@@ -771,7 +671,7 @@ def get_card_definitions():
             "rules": [
                 # 3% on Amazon (Condition: is_prime == False)
                 {
-                    "category": "Shopping - Online",
+                    "category": "Amazon India",
                     "base": 1.0,
                     "bonus": 2.0,
                     "bucket_idx": None,
@@ -805,7 +705,7 @@ def get_card_definitions():
                     "condition": None,
                 },
                 {
-                    "category": "Shopping - Retail",
+                    "category": "Shopping",
                     "base": 1.0,
                     "bonus": 0.0,
                     "bucket_idx": None,
@@ -909,14 +809,7 @@ def get_card_definitions():
                     "min_spend": 0,
                 },
                 {
-                    "category": "Shopping - Online",
-                    "base": 3.3,
-                    "bonus": 1.7,
-                    "bucket_idx": None,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Shopping - Retail",
+                    "category": "Shopping",
                     "base": 3.3,
                     "bonus": 1.7,
                     "bucket_idx": None,
@@ -1034,14 +927,7 @@ def get_card_definitions():
                 },
                 # 0.5% on everything else
                 {
-                    "category": "Shopping - Online",
-                    "base": 0.5,
-                    "bonus": 0.0,
-                    "bucket_idx": None,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Shopping - Retail",
+                    "category": "Shopping",
                     "base": 0.5,
                     "bonus": 0.0,
                     "bucket_idx": None,
@@ -1151,14 +1037,7 @@ def get_card_definitions():
                     "min_spend": 0,
                 },
                 {
-                    "category": "Shopping - Online",
-                    "base": 1.0,
-                    "bonus": 2.0,
-                    "bucket_idx": None,
-                    "min_spend": 0,
-                },
-                {
-                    "category": "Shopping - Retail",
+                    "category": "Shopping",
                     "base": 1.0,
                     "bonus": 2.0,
                     "bucket_idx": None,
@@ -1330,6 +1209,28 @@ def seed():
             else:
                 platform = random.choice(PLATFORMS)
 
+            # Determine Online Status
+            is_online = False
+            if category in [
+                "Travel - Flights",
+                "Travel - Hotels",
+                "Travel - Cabs & Rideshare",
+                "Entertainment",
+                "Telecom & Internet",
+                "Amazon India",  # From specific Merchant rule
+            ]:
+                is_online = True
+            elif category == "Shopping":
+                is_online = random.random() < 0.6  # 60% online
+            elif category == "Fuel":
+                is_online = False
+            elif category in ["Dining", "Groceries"]:
+                # Online if platform is food delivery app or online grocer (inferred)
+                # But here we simulate it:
+                is_online = platform != "Direct" or random.random() < 0.3
+            elif platform != "Direct":
+                is_online = True
+
             # D. Random Amount (Weighted: mostly small, sometimes big)
             if random.random() < 0.7:
                 amount = random.uniform(100, 3000)  # Common spend
@@ -1354,6 +1255,7 @@ def seed():
                 category=category,
                 platform=platform,
                 date=txn_date,
+                is_online=is_online,
                 points_earned=0.0,  # To be calculated by the brain later!
             )
             expenses.append(exp)

@@ -160,6 +160,7 @@ class Expense(SQLModel, table=True):
     merchant: str
     category: str
     platform: str = "Direct"
+    is_online: Optional[bool] = Field(default=None)  # New flag for Online/Offline
 
     # Stores the result of our calculation
     points_earned: float = 0.0

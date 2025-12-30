@@ -126,7 +126,7 @@ def test_rewards():
         large_tx = Expense(
             amount=2000000,
             merchant="Apple Store",
-            category="Shopping - Retail",
+            category="Shopping",
             card_id=test_card.id,
             date=datetime.now(),
             points_earned=60000,  # Exceeds 50k
@@ -167,43 +167,57 @@ def test_rewards():
         print(f"Breakdown: {res5.breakdown}")
         # Expect breakdown to contain "globally excluded" NOT "Global Limit Hit"
 
-        # 7. Test SBI Cashback Online (Uber)
-        print("\n--- Test 6: SBI Cashback Online (Uber) ---")
-        # Need to fetch SBI Cashback card (ID 2 usually, check seed)
+        # 7. Test SBI Cashback Online (Generic Condition)
+        print("\n--- Test 6: SBI Cashback Online (Generic Condition) ---")
         sbi_card = session.exec(
             select(CreditCard).where(CreditCard.name == "SBI Cashback")
         ).first()
         if sbi_card:
+            # A. Online Transaction (5%)
             exp6 = Expense(
-                amount=500,
-                merchant="Uber",
-                category="Travel - Cabs",  # Generic category, but 'Uber' merchant rule should hit
+                amount=1000,
+                merchant="Random Site",
+                category="Shopping",
                 card_id=sbi_card.id,
                 date=datetime.now(),
-                platform="Uber",  # Should match if platform used matches rule category? No, we added 'Uber' as category in rule.
-                # Expense.category is used for rule matching. Expense.merchant is checked first.
-                # In seed.py, I added rule with category="Uber".
-                # _find_best_rule checks: 1. Merchant Match (rule.category == expense.merchant)
+                is_online=True,
             )
-            # Ensure merchant matches the rule category "Uber"
             exp6.card = sbi_card
             res6 = calculate_rewards(session, exp6)
-            print(f"Points: {res6.total_points} (Expected: 25.0 -> 5% of 500)")
+            print(f"Online Points: {res6.total_points} (Expected: 50.0 -> 5% of 1000)")
             print(f"Breakdown: {res6.breakdown}")
+
+            # B. Offline Transaction (1%)
+            print("\n--- Test 6b: SBI Cashback Offline ---")
+            exp6b = Expense(
+                amount=1000,
+                merchant="Local Shop",
+                category="Shopping",
+                card_id=sbi_card.id,
+                date=datetime.now(),
+                is_online=False,
+            )
+            exp6b.card = sbi_card
+            res6b = calculate_rewards(session, exp6b)
+            print(
+                f"Offline Points: {res6b.total_points} (Expected: 10.0 -> 1% of 1000)"
+            )
+            print(f"Breakdown: {res6b.breakdown}")
         else:
             print("Skipping Test 6: SBI Cashback card not found.")
 
         # 8. Test Base Rate Fallback (HDFC Regalia)
-        print("\n--- Test 7: Base Rate Fallback ---")
+        print("\n--- Test 7: Base Rate Fallback (HDFC) ---")
         # Using HDFC Regalia Gold (we added Base rule to it in seed)
         hdfc_card = session.exec(
             select(CreditCard).where(CreditCard.name == "HDFC Regalia Gold")
         ).first()
         if hdfc_card:
+            # A. Unknown Category (Base Rate 1%)
             exp7 = Expense(
-                amount=1000,
-                merchant="Random Shop",
-                category="Uncategorized Stuff",
+                amount=2000,
+                merchant="Mystery",
+                category="Unknown",
                 card_id=hdfc_card.id,
                 date=datetime.now(),
             )

@@ -509,6 +509,7 @@ def add_transaction(
     card_name: str,
     platform: str = "Direct",
     date: Optional[str] = None,
+    is_online: Optional[bool] = None,
 ) -> dict:
     """
     Logs a new expense (transaction) to the database.
@@ -522,6 +523,7 @@ def add_transaction(
         card_name: The name of the credit card used.
         platform: How the payment was made (e.g., "Direct", "SmartBuy").
         date: Optional date in 'YYYY-MM-DD' format. Defaults to today.
+        is_online: Explicit flag if known (True=Online, False=Offline). If None, system infers.
 
     Returns:
         dict: Confirmation details including Transaction ID and status.
@@ -577,11 +579,40 @@ def add_transaction(
 
             card = cards[0]
 
-            # --- 5. Calculate Points (THE BRAIN) ---
-            # Create object first so we have the ID (if needed) but we need to compute rewards
-            # The rewards engine needs the expense to be linked to the card.
-            # We create a temporary expense object or just an uncommited one.
+            # 5. Infer is_online if not provided (Smart Logic)
+            if is_online is None:
+                # A. Check Category
+                if category in [
+                    "Shopping - Online",
+                    "Travel - Flights",
+                    "Travel - Cabs & Rideshare",
+                    "Entertainment",
+                    "Education",
+                ]:
+                    is_online = True
 
+                # B. Check Merchant (Common Examples)
+                online_merchants = [
+                    "Amazon",
+                    "Flipkart",
+                    "Myntra",
+                    "Uber",
+                    "Ola",
+                    "Swiggy",
+                    "Zomato",
+                    "Netflix",
+                    "Spotify",
+                    "Apple",
+                    "Google",
+                ]
+                if any(m.lower() in merchant.lower() for m in online_merchants):
+                    is_online = True
+
+                # C. Check Platform
+                if platform in ["SmartBuy", "Gyftr"]:
+                    is_online = True
+
+            # 6. Create Expense & Calculate Rewards
             expense = Expense(
                 amount=amount,
                 merchant=merchant,
@@ -590,8 +621,8 @@ def add_transaction(
                 date=transaction_date,
                 card_id=card.id,
                 points_earned=0.0,
+                is_online=is_online,
             )
-
             # Link the card object so the relationship is available immediately
             expense.card = card
 
@@ -626,6 +657,7 @@ def add_transaction(
                     "platform": expense.platform,
                     "card": card.name,
                     "points_earned": expense.points_earned,
+                    "is_online": expense.is_online,
                 },
                 "meta": {
                     "is_excluded_category": is_excluded,

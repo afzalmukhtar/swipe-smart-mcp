@@ -257,34 +257,63 @@ class RewardsEngine:
     ) -> Optional[RewardRule]:
         """
         Finds the most specific rule.
-        Priority: Merchant > Platform > Category.
+        Priority: Merchant > Platform > Best of (Category, Condition, Fallback).
         """
         # We can do this in Python since rules list is small per card.
         rules = card.reward_rules
 
-        # 1. Merchant Match
+        # 1. Merchant Match (Highest Priority - Explicit override)
         for r in rules:
             if r.category.lower() == expense.merchant.lower():
                 return r
 
-        # 2. Platform Match (if we had platform in Rules, we assume 'category' field reuse or dedicated field)
-        # For now, reusing 'category' field for simplicity as per seed.py
+        # 2. Platform Match
         for r in rules:
             if r.category.lower() == expense.platform.lower():
                 return r
 
+        candidates = []
+
         # 3. Category Match
         for r in rules:
             if r.category.lower() == expense.category.lower():
-                return r
+                candidates.append(r)
 
-        # 4. "Base" or "All Spends" Fallback?
-        # Check for a rule named "Base" or "All Spends"
+        # 4. Condition Match
         for r in rules:
-            if r.category in ["Base", "All Spends", "General"]:
-                return r
+            if r.condition_expression:
+                try:
+                    # Prepare context
+                    ctx = {
+                        "expense": expense,
+                        "card": card,
+                        "is_prime": card.meta_data.get("is_prime", False)
+                        if card.meta_data
+                        else False,
+                    }
+                    if eval(r.condition_expression, ctx):
+                        candidates.append(r)
+                except Exception:
+                    continue
 
-        return None
+        # 5. Fallback Match (Only if no specific category/condition match?)
+        # Actually, sometimes Base is better than nothing, but usually Base is low.
+        # But if we have "All Spends" = 1%, and "Shopping" = 0.5% (unlikely), we'd want 1%.
+        for r in rules:
+            if r.category in ["Base", "All Spends", "General", "Any"]:
+                # If a rule has a condition, it's a Conditional Rule (handled in Step 4).
+                # Fallbacks must be unconditional.
+                if r.condition_expression:
+                    continue
+                candidates.append(r)
+
+        if not candidates:
+            return None
+
+        # Return the rule with the highest Total Multiplier (Base + Bonus)
+        # Tie-breaker: Specificity (Category > Condition > Base) - tricky to encode.
+        # Let's just trust the value.
+        return max(candidates, key=lambda r: r.base_multiplier + r.bonus_multiplier)
 
     def _get_bucket_usage(
         self, bucket_id: int, start_date: datetime, end_date: datetime
