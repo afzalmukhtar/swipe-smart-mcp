@@ -111,7 +111,8 @@ def get_card_definitions():
                 monthly_limit=500000.0,
                 billing_cycle_start=15,
                 rewards_currency="Reward Points",
-                base_point_value=0.30,  # Good for flights via SmartBuy
+                base_point_value=0.30,
+                description="Premium travel card with 10x on SmartBuy (flights, hotels), 4x on dining, and 2x on other spends. Best redeemed via SmartBuy for flights at 0.30/point value.",
             ),
             "buckets": [
                 CapBucket(
@@ -248,7 +249,8 @@ def get_card_definitions():
                 monthly_limit=200000.0,
                 billing_cycle_start=1,
                 rewards_currency="Cashback",
-                base_point_value=1.00,  # 1 CB = 1 INR
+                base_point_value=1.00,
+                description="5% cashback on online spends (capped at ₹5000/month), 1% on offline. Direct cashback credited to statement. Best for heavy online shoppers.",
             ),
             "buckets": [
                 CapBucket(
@@ -318,6 +320,7 @@ def get_card_definitions():
                 billing_cycle_start=10,
                 rewards_currency="Cashback",
                 base_point_value=1.00,
+                description="5% on bill payments via Google Pay, 4% on Swiggy/Zomato, 2% on everything else. Great utility card with no annual fee on ₹2L spend.",
             ),
             "buckets": [
                 CapBucket(
@@ -421,7 +424,8 @@ def get_card_definitions():
                 monthly_limit=1000000.0,
                 billing_cycle_start=5,
                 rewards_currency="Membership Rewards",
-                base_point_value=0.50,  # High value for travel redemptions
+                base_point_value=0.50,
+                description="Ultra-premium charge card with 5x on travel, 3x on dining/entertainment. Airport lounge access, hotel status. Transfer to airlines at 1:1. High annual fee but premium perks.",
             ),
             "buckets": [],  # Amex Plat typically has no caps
             "rules": [
@@ -538,7 +542,7 @@ def get_card_definitions():
                 billing_cycle_start=20,
                 rewards_currency="Amazon Pay Balance",
                 base_point_value=1.00,
-                # Tier status: Prime member gets 5% on Amazon
+                description="5% back on Amazon.in for Prime members (capped), 2% on bill payments, 1% elsewhere. Rewards as Amazon Pay balance. Best for Amazon shoppers with Prime.",
                 tier_status={"membership": "prime"},
             ),
             "buckets": [
@@ -646,7 +650,7 @@ def get_card_definitions():
                 billing_cycle_start=20,
                 rewards_currency="Amazon Pay Balance",
                 base_point_value=1.00,
-                # Tier status: Non-Prime member gets 2% on Amazon
+                description="2% back on Amazon.in for non-Prime members, 2% on bill payments, 1% elsewhere. Consider Prime membership for 5% Amazon rewards.",
                 tier_status={"membership": "non_prime"},
             ),
             "buckets": [],  # Usually, 3% is uncapped or high cap for non-prime
@@ -747,7 +751,8 @@ def get_card_definitions():
                 monthly_limit=2000000.0,
                 billing_cycle_start=8,
                 rewards_currency="Reward Points",
-                base_point_value=0.50,  # Highest value for SmartBuy flights
+                base_point_value=0.50,
+                description="Super-premium card with 10x on SmartBuy, 5x on all spends. Points worth ₹0.50 via SmartBuy flights. Unlimited lounge access. Invite-only card.",
             ),
             "buckets": [
                 CapBucket(
@@ -866,6 +871,7 @@ def get_card_definitions():
                 billing_cycle_start=12,
                 rewards_currency="Cashback",
                 base_point_value=1.00,
+                description="Customizable card - pick 3 categories for 3.5% cashback (capped at ₹750/month), 0.5% on rest. No annual fee. Good for focused spending in chosen categories.",
             ),
             "buckets": [
                 CapBucket(

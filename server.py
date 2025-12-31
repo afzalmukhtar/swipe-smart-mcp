@@ -7,7 +7,7 @@ from textwrap import dedent
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
-from sqlmodel import Session, and_, col, or_, select
+from sqlmodel import Session, and_, col, func, or_, select
 
 from src.db import engine
 from src.models import CapBucket, CreditCard, Expense, RewardRule
@@ -705,7 +705,7 @@ def add_credit_card(
 
 
 @mcp.tool()
-def get_reward_balance(card_name: str) -> str:
+def get_reward_balance(card_name: str) -> dict:
     """
     Checks the current accumulated reward points for a specific card.
 
@@ -713,10 +713,65 @@ def get_reward_balance(card_name: str) -> str:
         card_name: The name of the card to check.
 
     Returns:
-        The total points balance.
+        Dictionary with total points, period breakdown, and card details.
     """
-    logger.info(f"Getting reward balance: {card_name}")
-    return "Reward balance retrieved successfully."
+    try:
+        with Session(engine) as session:
+            query = select(CreditCard).where(col(CreditCard.name).ilike(f"%{card_name}%"))
+            cards = session.exec(query).all()
+
+            if not cards:
+                return {"status": "error", "message": f"Card '{card_name}' not found."}
+
+            if len(cards) > 1:
+                return {
+                    "status": "error",
+                    "message": "Multiple cards found. Please be specific.",
+                    "matches": [{"id": c.id, "name": c.name} for c in cards],
+                }
+
+            card = cards[0]
+
+            # Get total points earned all time
+            total_points = session.exec(
+                select(func.sum(Expense.points_earned)).where(Expense.card_id == card.id)
+            ).first() or 0.0
+
+            # Get points this month
+            now = datetime.now()
+            month_start = datetime(now.year, now.month, 1)
+            monthly_points = session.exec(
+                select(func.sum(Expense.points_earned)).where(
+                    Expense.card_id == card.id,
+                    Expense.date >= month_start,
+                )
+            ).first() or 0.0
+
+            # Get transaction count
+            tx_count = session.exec(
+                select(func.count(Expense.id)).where(Expense.card_id == card.id)
+            ).first() or 0
+
+            return {
+                "status": "success",
+                "card": {
+                    "id": card.id,
+                    "name": card.name,
+                    "bank": card.bank,
+                    "rewards_currency": card.rewards_currency,
+                    "point_value": card.base_point_value,
+                },
+                "balance": {
+                    "total_points": round(total_points, 2),
+                    "estimated_value": round(total_points * card.base_point_value, 2),
+                    "this_month": round(monthly_points, 2),
+                    "transaction_count": tx_count,
+                },
+            }
+
+    except Exception as e:
+        logger.error(f"Error getting reward balance: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
@@ -735,6 +790,45 @@ def adjust_reward_points(card_name: str, points: int, reason: str) -> str:
     """
     logger.info(f"Adjusting reward points: {card_name} {points} {reason}")
     return "Reward points adjusted successfully."
+
+
+@mcp.tool()
+def get_card_description(card_id: int) -> dict:
+    """
+    Retrieves the description and key details of a credit card.
+    Useful for understanding card benefits before making a purchase decision.
+
+    Args:
+        card_id: The ID of the credit card.
+
+    Returns:
+        Dictionary with card name, description, tier status, and reward info.
+    """
+    try:
+        with Session(engine) as session:
+            card = session.get(CreditCard, card_id)
+
+            if not card:
+                return {"status": "error", "message": f"Card with ID {card_id} not found."}
+
+            return {
+                "status": "success",
+                "card": {
+                    "id": card.id,
+                    "name": card.name,
+                    "bank": card.bank,
+                    "network": card.network,
+                    "description": card.description or "No description available.",
+                    "tier_status": card.tier_status or {},
+                    "rewards_currency": card.rewards_currency,
+                    "point_value": card.base_point_value,
+                    "billing_cycle_start": card.billing_cycle_start,
+                },
+            }
+
+    except Exception as e:
+        logger.error(f"Error getting card description: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 if __name__ == "__main__":

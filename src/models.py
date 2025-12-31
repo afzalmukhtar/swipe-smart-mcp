@@ -45,6 +45,7 @@ class CreditCard(SQLModel, table=True):
     name: str = Field(index=True)
     bank: str
     network: str = "Unknown"
+    description: Optional[str] = None  # Card benefits summary for LLM context
 
     # Financial Limits
     monthly_limit: float
