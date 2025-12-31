@@ -1,10 +1,54 @@
-from dataclasses import dataclass
-from typing import List, Optional
+"""
+Card Recommender - Finds the best credit card for a transaction.
 
-from sqlmodel import Session
+LLM GUIDELINES FOR CHOOSING THE BEST CARD:
+==========================================
+When presenting recommendations to the user, consider these factors in order:
+
+1. HIGHEST CASH VALUE (Primary)
+   - Compare `best_redemption_value` across cards
+   - This accounts for both points earned AND redemption efficiency
+   - Example: 500 pts @ ₹0.50/pt = ₹250 beats 600 pts @ ₹0.25/pt = ₹150
+
+2. REDEMPTION FLEXIBILITY (Secondary)
+   - Cards with more redemption partners offer flexibility
+   - Check `redemption_options` list for partner count
+   - Airline/hotel transfers often yield 2-5x better value than cashback
+
+3. CAP STATUS (Tie-breaker)
+   - Prefer cards with `is_capped: False`
+   - If capped, check `cap_headroom_pct` - higher is better
+   - Warn user if card is >80% towards cap limit
+
+4. SPECIAL CONSIDERATIONS:
+   - For travel purchases: Prioritize cards with airline/hotel partners
+   - For everyday spend: Prioritize consistent cashback value
+   - For large purchases: Check if hitting cap, suggest splitting across cards
+
+RESPONSE FORMAT SUGGESTION:
+"For this ₹{amount} {category} purchase:
+ Best: {card_name} → {points} pts worth ₹{best_value} (via {best_partner})
+ Alt:  {card_name} → {points} pts worth ₹{alt_value}"
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from sqlmodel import Session, select
 
 from src.logic.rewards import RewardsEngine
 from src.models import CreditCard, Expense, RewardRule
+
+
+@dataclass
+class RedemptionOption:
+    """Cash value calculation for a single redemption partner."""
+
+    partner_name: str
+    transfer_ratio: float  # e.g., 1:1 or 2:1
+    point_value: float  # estimated INR per point after transfer
+    cash_value: float  # total INR value for this redemption path
 
 
 @dataclass
@@ -15,21 +59,73 @@ class CardRecommendation:
     card_name: str
     bank: str
 
-    # Points & Value
-    projected_points: float = 0.0
-    effective_value: float = 0.0  # points × base_point_value
+    # Points Earned
+    total_points: float = 0.0
+    base_points: float = 0.0
+    bonus_points: float = 0.0
+
+    # Multiplier Info
+    base_multiplier: float = 0.0
+    bonus_multiplier: float = 0.0
+    effective_multiplier: float = 0.0  # base + bonus
 
     # Rule Info
     matched_rule: Optional[str] = None
-    rule_breakdown: str = ""
+    rule_breakdown: List[str] = field(default_factory=list)
+
+    # Cash Values
+    base_cash_value: float = 0.0  # points × card's base_point_value
+    redemption_options: List[RedemptionOption] = field(default_factory=list)
+    best_redemption_value: float = 0.0  # highest value among all options
+    best_redemption_partner: Optional[str] = None
 
     # Cap Status
     is_capped: bool = False
-    cap_headroom_pct: Optional[float] = None  # % remaining before cap hit
+    cap_headroom_pct: Optional[float] = None
     cap_warning: Optional[str] = None
 
-    # Sorting helper
+    # Sorting
     rank: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for LLM consumption."""
+        return {
+            "card_id": self.card_id,
+            "card_name": self.card_name,
+            "bank": self.bank,
+            "points": {
+                "total": self.total_points,
+                "base": self.base_points,
+                "bonus": self.bonus_points,
+            },
+            "multipliers": {
+                "base": self.base_multiplier,
+                "bonus": self.bonus_multiplier,
+                "effective": self.effective_multiplier,
+            },
+            "matched_rule": self.matched_rule,
+            "breakdown": self.rule_breakdown,
+            "cash_value": {
+                "base_value": self.base_cash_value,
+                "best_value": self.best_redemption_value,
+                "best_partner": self.best_redemption_partner,
+                "all_options": [
+                    {
+                        "partner": opt.partner_name,
+                        "ratio": opt.transfer_ratio,
+                        "point_value": opt.point_value,
+                        "total_value": opt.cash_value,
+                    }
+                    for opt in self.redemption_options
+                ],
+            },
+            "cap_status": {
+                "is_capped": self.is_capped,
+                "headroom_pct": self.cap_headroom_pct,
+                "warning": self.cap_warning,
+            },
+            "rank": self.rank,
+        }
 
 
 @dataclass
@@ -49,47 +145,67 @@ class CardRecommender:
 
     Usage:
         recommender = CardRecommender(session)
-        recommendations = recommender.recommend(cards, request)
-        best = recommendations[0] if recommendations else None
+        results = recommender.recommend_for_expense(amount, merchant, category)
+        # results is a list of dicts sorted by best_redemption_value DESC
     """
 
     def __init__(self, session: Session):
         self.session = session
         self.engine = RewardsEngine(session)
 
-    def recommend(
+    def recommend_for_expense(
         self,
-        cards: List[CreditCard],
-        request: RecommendationRequest,
-    ) -> List[CardRecommendation]:
+        amount: float,
+        merchant: str,
+        category: str,
+        platform: str = "Direct",
+        is_online: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Analyze all cards and return ranked recommendations.
+        Main entry point: Fetch all cards, calculate rewards, return ranked results.
 
-        Returns cards sorted by effective_value DESC.
+        Returns list of dictionaries sorted by best_redemption_value DESC.
         """
+        cards = self._fetch_all_cards()
+
+        if not cards:
+            return []
+
+        request = RecommendationRequest(
+            amount=amount,
+            merchant=merchant,
+            category=category,
+            platform=platform,
+            is_online=is_online,
+        )
+
         recommendations = []
-
         for card in cards:
             rec = self._analyze_card(card, request)
             recommendations.append(rec)
 
-        # Sort by effective value (highest first)
-        recommendations.sort(key=lambda r: r.effective_value, reverse=True)
+        recommendations.sort(key=lambda r: r.best_redemption_value, reverse=True)
 
-        # Assign ranks
         for i, rec in enumerate(recommendations):
             rec.rank = i + 1
 
-        return recommendations
+        return [rec.to_dict() for rec in recommendations]
 
     def get_best_card(
         self,
-        cards: List[CreditCard],
-        request: RecommendationRequest,
-    ) -> Optional[CardRecommendation]:
-        """Convenience method to get just the top recommendation."""
-        recommendations = self.recommend(cards, request)
-        return recommendations[0] if recommendations else None
+        amount: float,
+        merchant: str,
+        category: str,
+        platform: str = "Direct",
+    ) -> Optional[Dict[str, Any]]:
+        """Convenience method to get just the top recommendation as dict."""
+        results = self.recommend_for_expense(amount, merchant, category, platform)
+        return results[0] if results else None
+
+    def _fetch_all_cards(self) -> List[CreditCard]:
+        """Fetch all credit cards from the database."""
+        statement = select(CreditCard)
+        return list(self.session.exec(statement).all())
 
     def _analyze_card(
         self,
@@ -102,18 +218,48 @@ class CardRecommender:
         Steps:
         1. Create temporary expense
         2. Run through RewardsEngine
-        3. Calculate effective value
+        3. Calculate redemption values for all partners
         4. Check cap headroom
         """
-        rec = CardRecommendation(
-            card_id=card.id,
-            card_name=card.name,
-            bank=card.bank,
+        temp_expense = self._create_temp_expense(card, request)
+
+        reward_result = self.engine.calculate_rewards(temp_expense)
+
+        matched_rule = self._get_matched_rule(card, temp_expense)
+        base_mult = matched_rule.base_multiplier if matched_rule else 0.0
+        bonus_mult = matched_rule.bonus_multiplier if matched_rule else 0.0
+
+        redemption_options = self._calculate_redemption_values(
+            card, reward_result.total_points
         )
 
-        # TODO: Create temp expense and simulate
-        # TODO: Calculate effective value
-        # TODO: Check cap headroom
+        best_option = max(redemption_options, key=lambda x: x.cash_value) if redemption_options else None
+
+        cap_headroom = self._calculate_cap_headroom(card, matched_rule)
+        cap_warning = None
+        if cap_headroom is not None and cap_headroom < 20:
+            cap_warning = f"Warning: Only {cap_headroom:.0f}% cap remaining"
+
+        rec = CardRecommendation(
+            card_id=card.id or 0,
+            card_name=card.name,
+            bank=card.bank,
+            total_points=reward_result.total_points,
+            base_points=reward_result.base_points,
+            bonus_points=reward_result.bonus_points,
+            base_multiplier=base_mult,
+            bonus_multiplier=bonus_mult,
+            effective_multiplier=base_mult + bonus_mult,
+            matched_rule=matched_rule.category if matched_rule else None,
+            rule_breakdown=reward_result.breakdown,
+            base_cash_value=reward_result.total_points * card.base_point_value,
+            redemption_options=redemption_options,
+            best_redemption_value=best_option.cash_value if best_option else reward_result.total_points * card.base_point_value,
+            best_redemption_partner=best_option.partner_name if best_option else "Direct Cashback",
+            is_capped=reward_result.is_capped,
+            cap_headroom_pct=cap_headroom,
+            cap_warning=cap_warning,
+        )
 
         return rec
 
@@ -123,8 +269,55 @@ class CardRecommender:
         request: RecommendationRequest,
     ) -> Expense:
         """Create a temporary (non-persisted) expense for simulation."""
-        # TODO: Implement
-        pass
+        return Expense(
+            amount=request.amount,
+            merchant=request.merchant,
+            category=request.category,
+            platform=request.platform,
+            is_online=request.is_online,
+            card_id=card.id,
+            card=card,
+        )
+
+    def _get_matched_rule(
+        self,
+        card: CreditCard,
+        expense: Expense,
+    ) -> Optional[RewardRule]:
+        """Find the rule that would be applied for this expense."""
+        return self.engine._find_best_rule(card, expense)
+
+    def _calculate_redemption_values(
+        self,
+        card: CreditCard,
+        total_points: float,
+    ) -> List[RedemptionOption]:
+        """Calculate cash value for each redemption partner."""
+        options = []
+
+        options.append(
+            RedemptionOption(
+                partner_name="Direct Cashback",
+                transfer_ratio=1.0,
+                point_value=card.base_point_value,
+                cash_value=total_points * card.base_point_value,
+            )
+        )
+
+        for partner in card.redemption_partners:
+            transferred_points = total_points * partner.transfer_ratio
+            cash_value = transferred_points * partner.estimated_value
+
+            options.append(
+                RedemptionOption(
+                    partner_name=partner.partner_name,
+                    transfer_ratio=partner.transfer_ratio,
+                    point_value=partner.estimated_value,
+                    cash_value=cash_value,
+                )
+            )
+
+        return options
 
     def _calculate_cap_headroom(
         self,
@@ -136,29 +329,56 @@ class CardRecommender:
 
         Returns None if rule has no cap, otherwise 0-100%.
         """
-        # TODO: Implement
-        pass
+        if not matched_rule or not matched_rule.cap_bucket:
+            return None
+
+        bucket = matched_rule.cap_bucket
+
+        start, end = self.engine._get_period_dates(
+            bucket.period, bucket.reset_anchor_month, datetime.now()
+        )
+        current_usage = self.engine._get_bucket_usage(bucket.id, start, end)
+
+        if bucket.max_points <= 0:
+            return None
+
+        used_pct = (current_usage / bucket.max_points) * 100
+        return max(0.0, 100.0 - used_pct)
 
 
 def recommend_card(
     session: Session,
-    cards: List[CreditCard],
     amount: float,
     merchant: str,
     category: str,
     platform: str = "Direct",
-) -> Optional[CardRecommendation]:
+) -> Optional[Dict[str, Any]]:
     """
     Convenience function: Find the best card for a transaction.
 
     Example:
-        best = recommend_card(session, user_cards, 5000, "Amazon", "Shopping")
+        best = recommend_card(session, 5000, "Amazon", "Shopping")
+        if best:
+            print(f"Use {best['card_name']} for {best['points']['total']} pts")
     """
     recommender = CardRecommender(session)
-    request = RecommendationRequest(
-        amount=amount,
-        merchant=merchant,
-        category=category,
-        platform=platform,
-    )
-    return recommender.get_best_card(cards, request)
+    return recommender.get_best_card(amount, merchant, category, platform)
+
+
+def recommend_all_cards(
+    session: Session,
+    amount: float,
+    merchant: str,
+    category: str,
+    platform: str = "Direct",
+) -> List[Dict[str, Any]]:
+    """
+    Get ranked recommendations for all cards.
+
+    Example:
+        results = recommend_all_cards(session, 5000, "Amazon", "Shopping")
+        for r in results:
+            print(f"{r['rank']}. {r['card_name']}: ₹{r['cash_value']['best_value']}")
+    """
+    recommender = CardRecommender(session)
+    return recommender.recommend_for_expense(amount, merchant, category, platform)
