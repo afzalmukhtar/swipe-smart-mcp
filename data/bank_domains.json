@@ -1,0 +1,30 @@
+{
+    "description": "Bank name to domain mapping for targeted credit card searches",
+    "last_updated": "2024-12-31",
+    "domains": {
+        "hdfc": "hdfcbank.com",
+        "icici": "icicibank.com",
+        "axis": "axisbank.com",
+        "sbi": "sbicard.com",
+        "amex": "americanexpress.com",
+        "american express": "americanexpress.com",
+        "kotak": "kotak.com",
+        "indusind": "indusind.com",
+        "rbl": "rblbank.com",
+        "yes": "yesbank.in",
+        "idfc": "idfcfirstbank.com",
+        "hsbc": "hsbc.co.in",
+        "sc": "sc.com",
+        "standard chartered": "sc.com",
+        "citi": "citibank.com",
+        "au": "aubank.in",
+        "federal": "federalbank.co.in",
+        "bob": "bankofbaroda.in",
+        "bank of baroda": "bankofbaroda.in",
+        "pnb": "pnbcard.in",
+        "union": "unionbankofindia.co.in",
+        "canara": "canarabank.com",
+        "indian": "indianbank.in",
+        "idbi": "idbibank.in"
+    }
+}

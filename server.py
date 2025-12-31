@@ -26,6 +26,9 @@ from src.models import (
 # Path to categories data
 CATEGORIES_FILE = Path(__file__).parent / "data" / "categories.json"
 
+# Bank domain mapping - loaded dynamically from data/bank_domains.json
+BANK_DOMAINS_FILE = Path(__file__).parent / "data" / "bank_domains.json"
+
 
 def load_categories() -> dict:
     """Load categories from JSON file."""
@@ -746,79 +749,231 @@ def get_card_addition_guidelines() -> dict:
             "user_says": "Add my HDFC Regalia Gold card",
             "you_ask": "I'll help you add the HDFC Regalia Gold. I need a few details:\n1. What's your credit limit?\n2. What day does your billing cycle start (1-31)?",
             "user_provides": "Limit is 5 lakhs, billing on 15th",
-            "then": "Call search_card_info('HDFC Regalia Gold') to get reward rules, then call add_credit_card",
+            "then": "Call search_card_info('HDFC Regalia Gold', 'HDFC') to get reward rules, then call add_credit_card",
         },
     }
 
 
-@mcp.tool()
-def search_card_info(card_name: str, max_results: int = 5) -> dict:
+def _load_bank_domains() -> dict[str, str]:
+    """Load bank domains from JSON file."""
+    try:
+        with open(BANK_DOMAINS_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("domains", {})
+    except Exception as e:
+        logger.warning(f"Failed to load bank domains: {e}")
+        return {}
+
+
+def _get_issuer_domain(bank: str) -> str | None:
+    """Get the issuer domain for a bank name."""
+    domains = _load_bank_domains()
+    bank_lower = bank.lower().strip()
+    return domains.get(bank_lower)
+
+
+def _build_card_queries(card_name: str, issuer_domain: str | None = None) -> list[dict]:
     """
-    Searches the web for credit card reward information using DuckDuckGo.
-    Use this to find reward rules, caps, and benefits before adding a card.
+    Build targeted search queries for credit card info.
+    Returns list of {query, category, priority} dicts.
+    """
+
+    def site_prefix(q: str) -> str:
+        return f"site:{issuer_domain} {q}" if issuer_domain else q
+
+    queries = [
+        # 1) Primary authoritative docs (PDF-first) - HIGHEST PRIORITY
+        {
+            "query": site_prefix(f'"{card_name}" MITC rewards filetype:pdf'),
+            "category": "official_docs",
+            "priority": 1,
+        },
+        {
+            "query": site_prefix(f'"{card_name}" "Key Facts Statement" filetype:pdf'),
+            "category": "official_docs",
+            "priority": 1,
+        },
+        {
+            "query": site_prefix(f'"{card_name}" "fees and charges" filetype:pdf'),
+            "category": "official_docs",
+            "priority": 2,
+        },
+        {
+            "query": site_prefix(
+                f'"{card_name}" "reward points" "terms and conditions" filetype:pdf'
+            ),
+            "category": "official_docs",
+            "priority": 2,
+        },
+        # 2) Rewards math + earning rules
+        {
+            "query": site_prefix(
+                f'"{card_name}" "earn rate" "reward points" "per 100"'
+            ),
+            "category": "rewards_math",
+            "priority": 3,
+        },
+        {
+            "query": site_prefix(f'"{card_name}" rounding posting "reward points"'),
+            "category": "rewards_math",
+            "priority": 4,
+        },
+        {
+            "query": site_prefix(f'"{card_name}" expiry validity "reward points"'),
+            "category": "rewards_math",
+            "priority": 4,
+        },
+        # 3) Caps + exclusions + MCC gotchas (critical for calculators)
+        {
+            "query": site_prefix(
+                f'"{card_name}" cap capping "per month" "reward points"'
+            ),
+            "category": "caps_exclusions",
+            "priority": 2,
+        },
+        {
+            "query": site_prefix(
+                f'"{card_name}" excluded exclusions MCC "not eligible"'
+            ),
+            "category": "caps_exclusions",
+            "priority": 3,
+        },
+        # 4) Partners / transfer / redemption value
+        {
+            "query": site_prefix(f'"{card_name}" "transfer partner" "air miles" ratio'),
+            "category": "partners",
+            "priority": 4,
+        },
+        {
+            "query": site_prefix(
+                f'"{card_name}" redeem redemption "reward points" value'
+            ),
+            "category": "partners",
+            "priority": 4,
+        },
+        # 5) Deep dive reviewers (CardExpert, CardMaven style)
+        {
+            "query": f'"{card_name}" review rewards benefits accelerated categories India',
+            "category": "reviews",
+            "priority": 3,
+        },
+        # 6) Community sources (TechnoFino + Reddit) - for edge cases
+        {
+            "query": f'site:technofino.in "{card_name}" cap exclusion MCC accelerated',
+            "category": "community",
+            "priority": 5,
+        },
+        {
+            "query": f'site:reddit.com "r/CreditCardsIndia" "{card_name}" cap exclusion rewards',
+            "category": "community",
+            "priority": 5,
+        },
+    ]
+
+    return queries
+
+
+@mcp.tool()
+def search_card_info(card_name: str, bank: str = "", max_results: int = 15) -> dict:
+    """
+    Searches the web for credit card reward information using targeted DuckDuckGo queries.
+    Focuses on official docs (MITC/KFS/T&Cs), reviewers, and community sources.
 
     Args:
         card_name: The name of the credit card (e.g., "HDFC Regalia Gold", "SBI Cashback").
-        max_results: Maximum number of search results to return. Default 5.
+        bank: Optional bank name for targeted site: searches (e.g., "HDFC", "ICICI", "Axis").
+        max_results: Maximum total results to return. Default 15.
 
     Returns:
-        dict with search results containing titles, snippets, and URLs.
+        dict with categorized search results (official_docs, rewards_math, caps, reviews, community).
         Use this information to extract reward rules for add_reward_rules().
     """
     try:
-        # Search queries optimized for Indian credit card info
-        queries = [
-            f"{card_name} reward points benefits India",
-            f"{card_name} cashback categories accelerated rewards",
-        ]
+        # Get issuer domain for targeted searches
+        issuer_domain = _get_issuer_domain(bank) if bank else None
+
+        # Build targeted queries
+        query_configs = _build_card_queries(card_name, issuer_domain)
+
+        # Sort by priority
+        query_configs.sort(key=lambda x: x["priority"])
 
         all_results = []
+        seen_urls = set()
 
         with DDGS() as ddgs:
-            for query in queries:
+            for qc in query_configs:
+                if len(all_results) >= max_results:
+                    break
+
                 try:
-                    results = list(ddgs.text(query, max_results=max_results))
+                    # Take top 1-2 results per query to stay focused
+                    results = list(ddgs.text(qc["query"], max_results=2))
                     for r in results:
-                        all_results.append(
-                            {
-                                "title": r.get("title", ""),
-                                "snippet": r.get("body", ""),
-                                "url": r.get("href", ""),
-                            }
-                        )
+                        url = r.get("href", "")
+                        if url and url not in seen_urls:
+                            seen_urls.add(url)
+                            all_results.append(
+                                {
+                                    "title": r.get("title", ""),
+                                    "snippet": r.get("body", ""),
+                                    "url": url,
+                                    "category": qc["category"],
+                                    "is_pdf": url.lower().endswith(".pdf"),
+                                }
+                            )
                 except Exception as e:
-                    logger.warning(f"Search query failed: {query} - {e}")
+                    logger.warning(f"Query failed: {qc['query'][:50]}... - {e}")
                     continue
 
-        # Deduplicate by URL
-        seen_urls = set()
-        unique_results = []
-        for r in all_results:
-            if r["url"] not in seen_urls:
-                seen_urls.add(r["url"])
-                unique_results.append(r)
-
-        if not unique_results:
+        if not all_results:
             return {
                 "status": "warning",
                 "message": f"No results found for '{card_name}'. You may need to add rules manually.",
                 "results": [],
             }
 
+        # Group by category for easier processing
+        categorized = {
+            "official_docs": [
+                r for r in all_results if r["category"] == "official_docs"
+            ],
+            "rewards_math": [r for r in all_results if r["category"] == "rewards_math"],
+            "caps_exclusions": [
+                r for r in all_results if r["category"] == "caps_exclusions"
+            ],
+            "partners": [r for r in all_results if r["category"] == "partners"],
+            "reviews": [r for r in all_results if r["category"] == "reviews"],
+            "community": [r for r in all_results if r["category"] == "community"],
+        }
+
         return {
             "status": "success",
             "card_name": card_name,
-            "results_count": len(unique_results),
-            "results": unique_results[
-                : max_results * 2
-            ],  # Return up to 2x max_results after dedup
-            "instructions": [
-                "Extract reward rates from the search results (e.g., '5% on dining', '10x on SmartBuy')",
-                "Convert percentages to multipliers: 5% = 0.05, 10% = 0.10",
-                "Note any caps mentioned (e.g., 'max 5000 points/month')",
-                "Identify the rewards currency (Points, Cashback, Miles)",
-                "Look for transfer partners if mentioned",
-            ],
+            "bank": bank or "unknown",
+            "issuer_domain": issuer_domain,
+            "total_results": len(all_results),
+            "results_by_category": categorized,
+            "all_results": all_results[:max_results],
+            "extraction_guide": {
+                "reward_rules": [
+                    "Look for: 'X points per ₹100' or 'X% cashback'",
+                    "Convert to multiplier: 5% = 0.05, 10 points per ₹100 = 0.10",
+                    "Note accelerated categories: Dining, Travel, Shopping, Fuel, etc.",
+                ],
+                "caps": [
+                    "Look for: 'maximum X points per month/statement cycle'",
+                    "Note which categories have caps vs unlimited",
+                ],
+                "exclusions": [
+                    "Look for: 'excluded MCCs', 'not eligible', 'excluded categories'",
+                    "Common exclusions: Fuel, Wallet loads, Insurance, Govt payments, Rent",
+                ],
+                "point_value": [
+                    "Look for: redemption value, '1 point = ₹X'",
+                    "Note transfer partner ratios if mentioned",
+                ],
+            },
         }
 
     except Exception as e:
