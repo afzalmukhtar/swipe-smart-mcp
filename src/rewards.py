@@ -80,7 +80,7 @@ class RewardsEngine:
 
         # --- GATE 1: Exclusion Logic ---
         # "Is this category banned by default?"
-        # moved before Global Cap so user sees "Excluded" instead of "Cap Hit" for banned items.
+        # If this passes user sees "Excluded" instead of "Cap Hit" for banned items.
         is_excluded, override_rule = self._check_exclusions(card, expense)
 
         if is_excluded and not override_rule:
@@ -100,14 +100,23 @@ class RewardsEngine:
         # If excluded BUT allowed (e.g. HDFC on Insurance), we continue to Waterfall
         # but ensure we ONLY use that specific rule.
 
-        # --- GATE 3: The Waterfall ---
+        # --- GATE 3: Calculate Rewards Using Waterfall Logic ---
         return self._calculate_waterfall(card, expense, override_rule)
+
+    # Priority order for cap checking: wider scope first
+    PERIOD_PRIORITY = {
+        PeriodType.STATEMENT_YEAR: 1,   # Check annual first (widest)
+        PeriodType.QUARTER: 2,          # Then quarterly
+        PeriodType.STATEMENT_MONTH: 3,  # Then monthly
+        PeriodType.DAILY: 4,            # Then daily (narrowest)
+    }
 
     def _check_global_caps(
         self, card: CreditCard, expense: Expense
     ) -> Tuple[bool, str]:
         """
         Checks if the card has a GLOBAL scope bucket that is full.
+        Evaluates caps in priority order: Annual → Quarterly → Monthly → Daily
         Returns: (is_hit, message)
         """
         # Find global buckets for this card
@@ -115,7 +124,13 @@ class RewardsEngine:
             b for b in card.cap_buckets if b.bucket_scope == BucketScope.GLOBAL
         ]
 
-        for bucket in global_buckets:
+        # Sort by priority: Annual → Quarterly → Monthly → Daily
+        sorted_buckets = sorted(
+            global_buckets,
+            key=lambda b: self.PERIOD_PRIORITY.get(b.period, 99)
+        )
+
+        for bucket in sorted_buckets:
             start_date, end_date = self._get_period_dates(
                 bucket.period, bucket.reset_anchor_month, expense.date
             )
@@ -343,38 +358,71 @@ class RewardsEngine:
         month = ref_date.month
         day = ref_date.day
 
-        if period == PeriodType.STATEMENT_CYCLE:
+        if period == PeriodType.STATEMENT_MONTH:
             # Anchor is billing day.
-            # If transactions is ON or AFTER anchor, cycle is [ThisMonth-Anchor, NextMonth-Anchor-1]
+            # If transaction is ON or AFTER anchor, cycle is [ThisMonth-Anchor, NextMonth-Anchor-1]
             # If before, cycle is [PrevMonth-Anchor, ThisMonth-Anchor-1]
-
             billing_day = anchor
             if day >= billing_day:
                 start = datetime(year, month, billing_day)
-                # Next month handling
                 if month == 12:
                     end = datetime(year + 1, 1, billing_day) - timedelta(seconds=1)
                 else:
                     end = datetime(year, month + 1, billing_day) - timedelta(seconds=1)
             else:
-                # Previous cycle
                 if month == 1:
                     start = datetime(year - 1, 12, billing_day)
                 else:
                     start = datetime(year, month - 1, billing_day)
                 end = datetime(year, month, billing_day) - timedelta(seconds=1)
-
             return start, end
 
-        elif period == PeriodType.CALENDAR_MONTH:
-            start = datetime(year, month, 1)
-            _, last_day = monthrange(year, month)
-            end = datetime(year, month, last_day, 23, 59, 59)
+        elif period == PeriodType.QUARTER:
+            # Calendar quarters: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec
+            quarter = (month - 1) // 3  # 0, 1, 2, 3
+            quarter_start_month = quarter * 3 + 1  # 1, 4, 7, 10
+            quarter_end_month = quarter_start_month + 2  # 3, 6, 9, 12
+            
+            start = datetime(year, quarter_start_month, 1)
+            _, last_day = monthrange(year, quarter_end_month)
+            end = datetime(year, quarter_end_month, last_day, 23, 59, 59)
             return start, end
 
-        # Simplified Fallback
+        elif period == PeriodType.STATEMENT_YEAR:
+            # Anniversary year based on reset_anchor_month (card activation month)
+            # e.g., anchor=3 (March): Mar 1 to Feb 28/29 of next year
+            anchor_month = anchor if 1 <= anchor <= 12 else 1
+            
+            if month >= anchor_month:
+                # We're in the current anniversary year
+                start_year = year
+            else:
+                # We're in the previous anniversary year (before anchor month)
+                start_year = year - 1
+            
+            start = datetime(start_year, anchor_month, 1)
+            
+            # End is last day of month before anchor_month in next year
+            if anchor_month == 1:
+                end_year = start_year
+                end_month = 12
+            else:
+                end_year = start_year + 1
+                end_month = anchor_month - 1
+            
+            _, last_day = monthrange(end_year, end_month)
+            end = datetime(end_year, end_month, last_day, 23, 59, 59)
+            return start, end
+
+        elif period == PeriodType.DAILY:
+            start = datetime(year, month, day, 0, 0, 0)
+            end = datetime(year, month, day, 23, 59, 59)
+            return start, end
+
+        # Fallback (should not reach here)
         start = datetime(year, month, 1)
-        end = datetime(year, month, 28)
+        _, last_day = monthrange(year, month)
+        end = datetime(year, month, last_day, 23, 59, 59)
         return start, end
 
 

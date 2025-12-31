@@ -40,7 +40,7 @@ def test_rewards():
             name="Dining Test Cap",
             max_points=2000.0,
             card_id=test_card.id,
-            period=PeriodType.STATEMENT_CYCLE,
+            period=PeriodType.STATEMENT_MONTH,
         )
         session.add(dining_bucket)
         session.commit()
@@ -68,7 +68,7 @@ def test_rewards():
             name="Global Test Cap",
             max_points=50000.0,
             card_id=test_card.id,
-            period=PeriodType.STATEMENT_CYCLE,
+            period=PeriodType.STATEMENT_MONTH,
             bucket_scope=BucketScope.GLOBAL,
         )
         session.add(global_bucket)

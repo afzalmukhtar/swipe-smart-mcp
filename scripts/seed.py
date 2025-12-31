@@ -123,17 +123,17 @@ def get_card_definitions():
                 CapBucket(
                     name="SmartBuy Monthly Cap",
                     max_points=4000.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
                 CapBucket(
                     name="Dining Bonus Cap",
                     max_points=2000.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
                 CapBucket(
                     name="Global Earnings Cap",
                     max_points=50000.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                     bucket_scope=BucketScope.GLOBAL,
                 ),
             ],
@@ -261,7 +261,7 @@ def get_card_definitions():
                 CapBucket(
                     name="Online Cashback Cap",
                     max_points=5000.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
             ],
             "rules": [
@@ -331,12 +331,12 @@ def get_card_definitions():
                 CapBucket(
                     name="5% Category Cap",
                     max_points=500.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
                 CapBucket(
                     name="Dining Cap",
                     max_points=400.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
             ],
             "rules": [
@@ -553,7 +553,7 @@ def get_card_definitions():
                 CapBucket(
                     name="Amazon Prime Cap",
                     max_points=2500.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
             ],
             "rules": [
@@ -781,7 +781,7 @@ def get_card_definitions():
                 CapBucket(
                     name="SmartBuy Monthly",
                     max_points=10000.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
             ],
             "rules": [
@@ -899,7 +899,7 @@ def get_card_definitions():
                 CapBucket(
                     name="Selected Category Cap",
                     max_points=750.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
             ],
             "rules": [
@@ -989,12 +989,12 @@ def get_card_definitions():
                 CapBucket(
                     name="10x Category Cap",
                     max_points=3000.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
                 CapBucket(
                     name="Fuel Cap",
                     max_points=1000.0,
-                    period=PeriodType.STATEMENT_CYCLE,
+                    period=PeriodType.STATEMENT_MONTH,
                 ),
             ],
             "rules": [

@@ -11,10 +11,9 @@ class PeriodType(str, Enum):
     """Defines when a limit resets."""
 
     DAILY = "daily"
-    STATEMENT_CYCLE = "statement_cycle"  # Resets on billing date
-    CALENDAR_MONTH = "calendar_month"  # Resets on 1st of month
-    QUARTERLY = "quarterly"  # Jan-Mar, Apr-Jun, etc.
-    ANNUAL = "annual"  # Yearly based on card anniversary
+    STATEMENT_MONTH = "statement_month"  # Resets on billing date (~30 days)
+    QUARTER = "quarter"  # Calendar quarters: Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec
+    STATEMENT_YEAR = "statement_year"  # Anniversary year from card activation
 
 
 class CapType(str, Enum):
@@ -89,9 +88,8 @@ class CapBucket(SQLModel, table=True):
     name: str
     max_points: float
 
-    # --- NEW: Cap Logic ---
-    period: PeriodType = Field(default=PeriodType.STATEMENT_CYCLE)
-    period: PeriodType = Field(default=PeriodType.STATEMENT_CYCLE)
+    # --- Cap Logic ---
+    period: PeriodType = Field(default=PeriodType.STATEMENT_MONTH)
     cap_type: CapType = Field(default=CapType.HARD_CAP)
     bucket_scope: BucketScope = Field(default=BucketScope.CATEGORY)
 
