@@ -159,7 +159,6 @@ def get_card_definitions():
                     "bonus": 3.0,
                     "bucket_idx": 0,
                     "min_spend": 0,
-                    "condition": "expense.is_online == True",
                 },
                 # Dining (4x, separate cap)
                 {
@@ -272,7 +271,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": 0,
                     "min_spend": 0,
-                    "condition": "expense.is_online == True",
                 },
                 # Base Rule (1%)
                 {
@@ -546,8 +544,8 @@ def get_card_definitions():
                 billing_cycle_start=20,
                 rewards_currency="Amazon Pay Balance",
                 base_point_value=1.00,
-                # NEW: Tag this card as belonging to a Prime member
-                meta_data={"is_prime": True},
+                # Tier status: Prime member gets 5% on Amazon
+                tier_status={"membership": "prime"},
             ),
             "buckets": [
                 CapBucket(
@@ -557,14 +555,14 @@ def get_card_definitions():
                 ),
             ],
             "rules": [
-                # 5% on Amazon (Condition: is_prime == True)
+                # 5% on Amazon (Prime members only)
                 {
                     "category": "Amazon India",
                     "base": 2.0,
                     "bonus": 3.0,
                     "bucket_idx": 0,
                     "min_spend": 0,
-                    "condition": "is_prime == True",
+                    "match_conditions": {"membership": "prime"},
                 },
                 # 2% on Bill Payments
                 {
@@ -573,7 +571,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Telecom & Internet",
@@ -581,7 +578,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 # 1% elsewhere
                 {
@@ -590,7 +586,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Shopping",
@@ -598,7 +593,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Travel - Flights",
@@ -606,7 +600,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Groceries",
@@ -614,7 +607,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Entertainment",
@@ -622,7 +614,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 # Exclusions
                 {
@@ -631,7 +622,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Rent",
@@ -639,7 +629,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Wallet & Prepaid Loads",
@@ -647,7 +636,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
             ],
             "partners": [],
@@ -664,19 +652,19 @@ def get_card_definitions():
                 billing_cycle_start=20,
                 rewards_currency="Amazon Pay Balance",
                 base_point_value=1.00,
-                # NEW: Tag this card as belonging to a Non-Prime member
-                meta_data={"is_prime": False},
+                # Tier status: Non-Prime member gets 3% on Amazon
+                tier_status={"membership": "non_prime"},
             ),
             "buckets": [],  # Usually, 3% is uncapped or high cap for non-prime
             "rules": [
-                # 3% on Amazon (Condition: is_prime == False)
+                # 3% on Amazon (Non-Prime members)
                 {
                     "category": "Amazon India",
                     "base": 1.0,
                     "bonus": 2.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": "is_prime == False",
+                    "match_conditions": {"membership": "non_prime"},
                 },
                 # 2% on Bill Payments
                 {
@@ -685,7 +673,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Telecom & Internet",
@@ -693,7 +680,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 # 1% elsewhere
                 {
@@ -702,7 +688,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Shopping",
@@ -710,7 +695,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Travel - Flights",
@@ -718,7 +702,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Groceries",
@@ -726,7 +709,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Entertainment",
@@ -734,7 +716,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 # Exclusions
                 {
@@ -743,7 +724,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Rent",
@@ -751,7 +731,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
                 {
                     "category": "Wallet & Prepaid Loads",
@@ -759,7 +738,6 @@ def get_card_definitions():
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
-                    "condition": None,
                 },
             ],
             "partners": [],
@@ -1161,7 +1139,7 @@ def seed():
                         bonus_multiplier=r["bonus"],
                         cap_bucket_id=bucket_id,
                         min_spend=r.get("min_spend", 0.0),
-                        condition_expression=r.get("condition"),
+                        match_conditions=r.get("match_conditions"),
                     )
                     session.add(rule)
 

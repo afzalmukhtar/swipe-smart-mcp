@@ -1,8 +1,9 @@
-from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from datetime import date, datetime
 from enum import Enum
-from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional
+
 from sqlalchemy import JSON, Column
+from sqlmodel import Field, Relationship, SQLModel
 
 # --- 0. Enums for Logic & Time ---
 
@@ -35,7 +36,9 @@ class BucketScope(str, Enum):
 class CreditCard(SQLModel, table=True):
     """
     Represents a credit card configuration.
-    Now supports 'Metadata' to handle state (e.g., Prime Member).
+
+    tier_status in meta_data stores current membership info:
+    e.g., {"membership": "prime"} or {"tier": "gold"}
     """
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -55,22 +58,21 @@ class CreditCard(SQLModel, table=True):
     rewards_currency: str = "Points"
     base_point_value: float = 0.25
 
-    # --- NEW: Dynamic State (The "Toggle" Switch) ---
-    # Stores flags like {"is_prime": true, "is_swiggy_one": false}
-    # We use SQLAlchemy's JSON column type for flexibility
-    meta_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    # Tier status: {"membership": "prime"} or {"tier": "gold"}
+    # LLM confirms this before calculating rewards
+    tier_status: dict[str, str] = Field(default={}, sa_column=Column(JSON))
 
     # --- RELATIONSHIPS (With Cascade Deletes) ---
-    expenses: List["Expense"] = Relationship(
+    expenses: list["Expense"] = Relationship(
         back_populates="card", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    redemption_partners: List["RedemptionPartner"] = Relationship(
+    redemption_partners: list["RedemptionPartner"] = Relationship(
         back_populates="card", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    cap_buckets: List["CapBucket"] = Relationship(
+    cap_buckets: list["CapBucket"] = Relationship(
         back_populates="card", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    reward_rules: List["RewardRule"] = Relationship(
+    reward_rules: list["RewardRule"] = Relationship(
         back_populates="card", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -101,14 +103,17 @@ class CapBucket(SQLModel, table=True):
     card: CreditCard = Relationship(back_populates="cap_buckets")
 
     # If a bucket is deleted, the rule simply becomes "Uncapped" (safe)
-    rules: List["RewardRule"] = Relationship(back_populates="cap_bucket")
+    rules: list["RewardRule"] = Relationship(back_populates="cap_bucket")
 
 
 # --- 3. Reward Rules (The "Logic") ---
 class RewardRule(SQLModel, table=True):
     """
     Defines how points are calculated (Base + Bonus).
-    Now supports Conditional Logic (Prime vs Non-Prime).
+
+    match_conditions: Tier conditions this rule applies to.
+    e.g., {"membership": "prime"} - only for Prime users
+    If None, rule applies to everyone (universal).
     """
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -123,9 +128,11 @@ class RewardRule(SQLModel, table=True):
     # Constraints
     min_spend: float = 0.0
 
-    # --- NEW: Conditional Logic ---
-    # e.g., "is_prime == True". If None, applies to everyone.
-    condition_expression: Optional[str] = Field(default=None)
+    # Tier matching: {"membership": "prime"} or None for universal rules
+    # All key-value pairs must match card's tier_status
+    match_conditions: Optional[dict[str, str]] = Field(
+        default=None, sa_column=Column(JSON)
+    )
 
     # Link to a shared Bucket (Optional - If None, it's UNLIMITED)
     cap_bucket_id: Optional[int] = Field(default=None, foreign_key="capbucket.id")
