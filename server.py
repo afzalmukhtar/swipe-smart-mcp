@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from sqlmodel import Session, and_, col, func, or_, select
 
 from src.db import engine
+from src.logic.recommender import recommend_all_cards
 from src.logic.rewards import calculate_rewards
 from src.models import (
     AdjustmentType,
@@ -387,7 +388,7 @@ def get_card_rules(card_identifier: str) -> dict:
             output = {"status": "success", "match_count": len(results), "cards": []}
 
             for card in results:
-                card_data = {
+                card_data: dict[str, list[dict[str, str]]] = {
                     "id": card.id,
                     "name": card.name,
                     "bank": card.bank,
@@ -1625,6 +1626,121 @@ def get_card_description(card_id: int) -> dict:
 
     except Exception as e:
         logger.error(f"Error getting card description: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ======================= CARD RECOMMENDATION =======================
+# Tool to find the best card for a purchase
+# ====================================================================
+
+
+@mcp.tool()
+def get_best_card_for_purchase(
+    amount: float,
+    merchant: str,
+    category: str,
+    platform: str = "Direct",
+) -> dict:
+    """
+    Finds the BEST credit card to use for a specific purchase.
+
+    Call this tool when user asks:
+    - "Which card should I use for X?"
+    - "What's the best card for this purchase?"
+    - "How can I maximize rewards on X?"
+
+    Args:
+        amount: Purchase amount in INR (e.g., 5000)
+        merchant: Where the purchase is being made (e.g., "Amazon", "Swiggy", "MakeMyTrip")
+        category: Purchase category. Use valid categories from get_expense_logging_rules.
+        platform: Payment platform (Default: "Direct"). Options: Direct, SmartBuy, Amazon Pay, CRED
+
+    Returns:
+        dict containing recommendations and guidelines for interpreting/presenting results.
+    """
+    try:
+        with Session(engine) as session:
+            results = recommend_all_cards(
+                session,
+                amount=amount,
+                merchant=merchant,
+                category=category,
+                platform=platform,
+            )
+
+            if not results:
+                return {
+                    "status": "error",
+                    "message": "No cards found in wallet. Add cards first using add_credit_card.",
+                }
+
+            # Pre-formatted comparison for easy display
+            quick_comparison = []
+            for card in results[:5]:
+                quick_comparison.append({
+                    "rank": card["rank"],
+                    "card": f"{card['card_name']} ({card['bank']})",
+                    "points": f"{card['points']['total']:,.0f}",
+                    "multiplier": f"{card['multipliers']['effective']}x",
+                    "best_value": f"₹{card['cash_value']['best_value']:,.0f}",
+                    "best_via": card["cash_value"]["best_partner"],
+                    "cashback_value": f"₹{card['cash_value']['base_value']:,.0f}",
+                    "warning": card["cap_status"]["warning"],
+                })
+
+            return {
+                "status": "success",
+                "purchase": f"₹{amount:,.0f} {merchant} ({category})",
+                "recommendation_count": len(results),
+                "best_card": results[0] if results else None,
+                "quick_comparison": quick_comparison,
+                "all_recommendations": results,
+                "understanding_the_results": {
+                    "card_name": "Card identification",
+                    "points.total": "Raw points earned (base + bonus)",
+                    "multipliers.effective": "Earn rate (e.g., 5.0x = 5 points per ₹1)",
+                    "matched_rule": "Which reward rule triggered (e.g., 'Shopping', 'Dining')",
+                    "cash_value.best_value": "**PRIMARY METRIC** - Maximum ₹ value achievable",
+                    "cash_value.best_partner": "How to redeem for maximum value",
+                    "cash_value.base_value": "Direct cashback value (simpler redemption)",
+                    "cap_status.warning": "Warning message if near cap limit",
+                    "rank": "1 = best, 2 = second best, etc.",
+                },
+                "how_to_respond": {
+                    "format": "Present recommendation clearly, then optionally show comparison",
+                    "1_recommendation": "Use [card_name] for this ₹[amount] [category] purchase",
+                    "2_reason": "You'll earn [points] points ([multiplier]x rate) worth ₹[best_value]",
+                    "3_redemption": "Redeem via [best_partner] for maximum value",
+                    "4_alternative": "If rank 2 is close in value, mention it",
+                    "5_warning": "Include cap_status.warning if present",
+                },
+                "example_responses": [
+                    {
+                        "scenario": "Simple Purchase",
+                        "response": "For this ₹5,000 Amazon purchase, use your **HDFC Infinia**.\nYou'll earn 25,000 points (5x rate) worth **₹50,000** via Marriott Bonvoy.\nAlternative: HDFC Regalia Gold gives ₹49,000 value.",
+                    },
+                    {
+                        "scenario": "With Cap Warning",
+                        "response": "Use **Axis Ace** for this ₹4,000 utility bill — earns 8,500 points worth ₹8,500.\n⚠️ Note: You've used 85% of your monthly bonus cap.",
+                    },
+                    {
+                        "scenario": "Comparison List (if user asks to compare)",
+                        "response": "For ₹5,000 Amazon Shopping:\n\n1. **HDFC Infinia** → ₹50,000 (via Marriott Bonvoy) ✅ BEST\n2. HDFC Regalia Gold → ₹49,000 (via Marriott Bonvoy)\n3. IDFC First Select → ₹22,500 (via Club Vistara)\n\nRecommendation: Use HDFC Infinia for maximum value.",
+                    },
+                ],
+                "behavior_rules": [
+                    "Always recommend the #1 ranked card (highest best_value)",
+                    "Mention the redemption partner for maximum value",
+                    "If best_partner is NOT 'Direct Cashback', also mention cashback_value as simpler alternative",
+                    "Include alternative card if rank 2 is within 20% of rank 1 value",
+                    "Always include warning if present",
+                    "Format amounts with ₹ and commas (e.g., ₹50,000)",
+                    "Use quick_comparison for formatted display when user asks to compare cards",
+                ],
+            }
+
+    except Exception as e:
+        logger.error(f"Error in card recommendation: {e}")
         return {"status": "error", "message": str(e)}
 
 

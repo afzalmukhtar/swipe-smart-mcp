@@ -1,34 +1,98 @@
 """
 Card Recommender - Finds the best credit card for a transaction.
 
-LLM GUIDELINES FOR CHOOSING THE BEST CARD:
-==========================================
-When presenting recommendations to the user, consider these factors in order:
+================================================================================
+LLM GUIDELINES FOR CARD RECOMMENDATION
+================================================================================
 
-1. HIGHEST CASH VALUE (Primary)
-   - Compare `best_redemption_value` across cards
+UNDERSTANDING THE OUTPUT:
+-------------------------
+Each card recommendation contains:
+- `card_name`, `bank`: Card identification
+- `points.total`: Raw points earned (base + bonus)
+- `multipliers.effective`: Combined earn rate (e.g., 5.0x means 5 pts per ₹1)
+- `matched_rule`: Which reward rule triggered (e.g., "Shopping", "Dining")
+- `cash_value.best_value`: **PRIMARY METRIC** - Maximum ₹ value achievable
+- `cash_value.best_partner`: How to redeem for max value
+- `cash_value.all_options`: All redemption paths with their values
+- `cap_status`: Whether card is hitting spend limits
+
+DECISION LOGIC (in priority order):
+-----------------------------------
+1. **BEST VALUE** → Use `cash_value.best_value` (already sorted DESC)
+   - The #1 ranked card gives the highest real ₹ return
    - This accounts for both points earned AND redemption efficiency
-   - Example: 500 pts @ ₹0.50/pt = ₹250 beats 600 pts @ ₹0.25/pt = ₹150
+   - Example: 500 pts @ ₹2/pt = ₹1000 beats 800 pts @ ₹0.50/pt = ₹400
 
-2. REDEMPTION FLEXIBILITY (Secondary)
-   - Cards with more redemption partners offer flexibility
-   - Check `redemption_options` list for partner count
-   - Airline/hotel transfers often yield 2-5x better value than cashback
+2. **REDEMPTION PATH** → Check `cash_value.best_partner`
+   - "Direct Cashback": Simple, instant value
+   - Airline/Hotel partners: Higher value but requires travel redemption
+   - If user prefers cashback, look at `cash_value.base_value` instead
 
-3. CAP STATUS (Tie-breaker)
-   - Prefer cards with `is_capped: False`
-   - If capped, check `cap_headroom_pct` - higher is better
-   - Warn user if card is >80% towards cap limit
+3. **CAP STATUS** → Check `cap_status.is_capped` and `cap_status.warning`
+   - If `is_capped: True` or warning exists, mention it to user
+   - Suggest alternative card if primary is near cap limit
 
-4. SPECIAL CONSIDERATIONS:
-   - For travel purchases: Prioritize cards with airline/hotel partners
-   - For everyday spend: Prioritize consistent cashback value
-   - For large purchases: Check if hitting cap, suggest splitting across cards
+4. **CATEGORY CONTEXT**:
+   - Travel purchases: Airline partner redemptions are ideal
+   - Everyday spend: Prefer consistent cashback cards
+   - Large purchases: Check if hitting cap, suggest splitting
 
-RESPONSE FORMAT SUGGESTION:
-"For this ₹{amount} {category} purchase:
- Best: {card_name} → {points} pts worth ₹{best_value} (via {best_partner})
- Alt:  {card_name} → {points} pts worth ₹{alt_value}"
+HOW TO RESPOND TO USER:
+-----------------------
+Structure your response with these elements:
+
+1. **RECOMMENDATION** (Required)
+   "Use [card_name] for this ₹[amount] [category] purchase"
+
+2. **REASON** (Required)
+   "You'll earn [points] points ([multiplier]x rate) worth ₹[best_value]"
+
+3. **REDEMPTION ACTION** (Required)
+   "Redeem via [best_partner] for maximum value"
+   OR "Points can be used as direct cashback"
+
+4. **ALTERNATIVE** (If relevant)
+   "Alternative: [card_name] gives ₹[value] (if you prefer [reason])"
+
+5. **WARNING** (If applicable)
+   "Note: [cap_warning]" or "This card is near its monthly cap"
+
+EXAMPLE RESPONSES:
+------------------
+
+**Simple Purchase:**
+"For this ₹5,000 Amazon purchase, use your **HDFC Infinia**.
+You'll earn 25,000 points (5x rate) worth **₹50,000** when redeemed via Marriott Bonvoy.
+Alternative: HDFC Regalia Gold gives ₹49,000 value."
+
+**With Cap Warning:**
+"Use **Axis Ace** for this ₹4,000 utility bill — earns 8,500 points worth ₹8,500.
+⚠️ Note: You've used 85% of your monthly bonus cap. Consider HDFC Infinia (₹26,400 value) for larger bills this month."
+
+**Travel Redemption:**
+"For this ₹50,000 flight booking, use **HDFC Regalia Gold**.
+Earns 50,000 points worth **₹175,000** via Marriott Bonvoy transfer.
+If you prefer instant value: ₹15,000 direct cashback is also available."
+
+**When No Good Option:**
+"For this ₹2,000 Swiggy order, your best option is HDFC Regalia Gold (₹7,000 value).
+Note: None of your cards have specific Food Delivery bonuses — consider adding a dining-focused card."
+
+FIELDS QUICK REFERENCE:
+-----------------------
+result['card_name']                    → Card name
+result['points']['total']              → Total points earned
+result['multipliers']['effective']     → Earn rate (e.g., 5.0x)
+result['matched_rule']                 → Rule that matched (e.g., "Shopping")
+result['cash_value']['best_value']     → Best ₹ value (PRIMARY SORT KEY)
+result['cash_value']['best_partner']   → Best redemption method
+result['cash_value']['base_value']     → Direct cashback value
+result['cash_value']['all_options']    → List of all redemption paths
+result['cap_status']['is_capped']      → True if cap hit
+result['cap_status']['warning']        → Cap warning message if any
+result['rank']                         → 1 = best, 2 = second best, etc.
+================================================================================
 """
 
 from dataclasses import dataclass, field
