@@ -1,6 +1,6 @@
 import json
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging import getLogger
 from pathlib import Path
 from typing import Optional
@@ -1741,6 +1741,187 @@ def get_best_card_for_purchase(
 
     except Exception as e:
         logger.error(f"Error in card recommendation: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ======================= EXPENSE ANALYSIS =======================
+# Tool to analyze spending patterns and reward efficiency
+# ================================================================
+
+
+@mcp.tool()
+def analyze_expenses(
+    period: str = "month",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> dict:
+    """
+    Analyzes spending patterns and reward earnings for a given period.
+
+    Call this tool when user asks:
+    - "How did I spend this month?"
+    - "Show me my spending summary"
+    - "What's my reward rate?"
+    - "Where is my money going?"
+
+    Args:
+        period: Time period to analyze. Options: "week", "month", "quarter", "year"
+                Ignored if start_date/end_date provided.
+        start_date: Custom start date (YYYY-MM-DD). Optional.
+        end_date: Custom end date (YYYY-MM-DD). Optional.
+
+    Returns:
+        dict with spending summary, category breakdown, card usage, and insights.
+    """
+    try:
+        with Session(engine) as session:
+            # Determine date range
+            today = datetime.now().date()
+
+            if start_date and end_date:
+                start = datetime.strptime(start_date, "%Y-%m-%d").date()
+                end = datetime.strptime(end_date, "%Y-%m-%d").date()
+                period_label = f"{start_date} to {end_date}"
+            else:
+                if period == "week":
+                    start = today - timedelta(days=7)
+                    period_label = "Last 7 days"
+                elif period == "quarter":
+                    start = today - timedelta(days=90)
+                    period_label = "Last 90 days"
+                elif period == "year":
+                    start = today - timedelta(days=365)
+                    period_label = "Last 365 days"
+                else:  # default: month
+                    start = today - timedelta(days=30)
+                    period_label = "Last 30 days"
+                end = today
+
+            # Query expenses in date range
+            query = (
+                select(Expense)
+                .join(CreditCard)
+                .where(Expense.date >= start)
+                .where(Expense.date <= end)
+            )
+            expenses = list(session.exec(query).all())
+
+            if not expenses:
+                return {
+                    "status": "success",
+                    "period": period_label,
+                    "message": "No transactions found for this period.",
+                    "summary": {
+                        "total_spend": 0,
+                        "transaction_count": 0,
+                        "total_points": 0,
+                    },
+                }
+
+            # Calculate totals
+            total_spend = sum(e.amount for e in expenses)
+            total_points = sum(e.points_earned or 0 for e in expenses)
+            transaction_count = len(expenses)
+            avg_transaction = total_spend / transaction_count if transaction_count else 0
+
+            # Category breakdown
+            category_spend = {}
+            category_points = {}
+            for e in expenses:
+                cat = e.category or "Uncategorized"
+                category_spend[cat] = category_spend.get(cat, 0) + e.amount
+                category_points[cat] = category_points.get(cat, 0) + (e.points_earned or 0)
+
+            # Sort by spend descending
+            sorted_categories = sorted(
+                category_spend.items(), key=lambda x: x[1], reverse=True
+            )
+
+            category_breakdown = []
+            for cat, spend in sorted_categories:
+                points = category_points.get(cat, 0)
+                pct = (spend / total_spend * 100) if total_spend else 0
+                category_breakdown.append({
+                    "category": cat,
+                    "spend": f"₹{spend:,.0f}",
+                    "spend_raw": spend,
+                    "points": f"{points:,.0f}",
+                    "percent_of_total": f"{pct:.1f}%",
+                })
+
+            # Card usage breakdown
+            card_spend = {}
+            card_points = {}
+            card_names = {}
+            for e in expenses:
+                cid = e.card_id
+                card_spend[cid] = card_spend.get(cid, 0) + e.amount
+                card_points[cid] = card_points.get(cid, 0) + (e.points_earned or 0)
+                if cid not in card_names and e.card:
+                    card_names[cid] = f"{e.card.name} ({e.card.bank})"
+
+            sorted_cards = sorted(
+                card_spend.items(), key=lambda x: x[1], reverse=True
+            )
+
+            card_breakdown = []
+            for cid, spend in sorted_cards:
+                points = card_points.get(cid, 0)
+                pct = (spend / total_spend * 100) if total_spend else 0
+                card_breakdown.append({
+                    "card": card_names.get(cid, f"Card {cid}"),
+                    "spend": f"₹{spend:,.0f}",
+                    "spend_raw": spend,
+                    "points": f"{points:,.0f}",
+                    "percent_of_total": f"{pct:.1f}%",
+                })
+
+            # Calculate effective reward rate
+            # Estimate value: use average base_point_value across cards
+            cards = list(session.exec(select(CreditCard)).all())
+            avg_point_value = sum(c.base_point_value for c in cards) / len(cards) if cards else 0.30
+            estimated_value = total_points * avg_point_value
+            effective_rate = (estimated_value / total_spend * 100) if total_spend else 0
+
+            # Top merchants
+            merchant_spend = {}
+            for e in expenses:
+                m = e.merchant or "Unknown"
+                merchant_spend[m] = merchant_spend.get(m, 0) + e.amount
+
+            top_merchants = sorted(
+                merchant_spend.items(), key=lambda x: x[1], reverse=True
+            )[:5]
+
+            return {
+                "status": "success",
+                "period": period_label,
+                "summary": {
+                    "total_spend": f"₹{total_spend:,.0f}",
+                    "total_spend_raw": total_spend,
+                    "transaction_count": transaction_count,
+                    "avg_transaction": f"₹{avg_transaction:,.0f}",
+                    "total_points": f"{total_points:,.0f}",
+                    "estimated_value": f"₹{estimated_value:,.0f}",
+                    "effective_reward_rate": f"{effective_rate:.2f}%",
+                },
+                "top_categories": category_breakdown[:5],
+                "all_categories": category_breakdown,
+                "card_usage": card_breakdown,
+                "top_merchants": [
+                    {"merchant": m, "spend": f"₹{s:,.0f}"} for m, s in top_merchants
+                ],
+                "how_to_present": {
+                    "headline": f"In {period_label}, you spent {total_spend:,.0f} across {transaction_count} transactions",
+                    "highlight_1": "Top category and spend from top_categories[0]",
+                    "highlight_2": "Most used card from card_usage[0]",
+                    "highlight_3": f"Earned {total_points:,.0f} points worth ~₹{estimated_value:,.0f}",
+                    "reward_insight": f"Effective reward rate is {effective_rate:.2f}%",
+                },
+            }
+
+    except Exception as e:
+        logger.error(f"Error analyzing expenses: {e}")
         return {"status": "error", "message": str(e)}
 
 
