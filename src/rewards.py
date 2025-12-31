@@ -257,33 +257,29 @@ class RewardsEngine:
         self, card: CreditCard, expense: Expense
     ) -> Optional[RewardRule]:
         """
-        Finds the most specific rule for this expense.
+        Finds the BEST rule for this expense (highest multiplier wins).
 
-        Priority (most specific wins):
+        Collects ALL matching rules from:
         1. Merchant (e.g., "Amazon" rule for Amazon purchase)
         2. Platform (e.g., "SmartBuy" rule when using SmartBuy)
         3. Category (e.g., "Dining" rule for restaurant)
         4. Fallback (e.g., "All Spends" base rate)
 
-        After collecting candidates, filter by tier matching:
-        - Rule's match_conditions must match card's tier_status
-        - If no match_conditions, rule is universal (applies to all)
+        Then filters by tier matching and returns highest multiplier.
+        This ensures you always get the BEST rate, not just first match.
         """
         rules = card.reward_rules
+        candidates = []
 
-        # 1. Merchant Match (highest priority)
+        # 1. Merchant Match
         for r in rules:
             if r.category.lower() == expense.merchant.lower():
-                if self._matches_tier(r, card):
-                    return r
+                candidates.append(r)
 
         # 2. Platform Match
         for r in rules:
             if r.category.lower() == expense.platform.lower():
-                if self._matches_tier(r, card):
-                    return r
-
-        candidates = []
+                candidates.append(r)
 
         # 3. Category Match
         for r in rules:
@@ -295,7 +291,7 @@ class RewardsEngine:
             if r.category in ["Base", "All Spends", "General", "Any"]:
                 candidates.append(r)
 
-        # Filter candidates by tier matching
+        # Filter by tier matching
         if candidates:
             tier_matched = [r for r in candidates if self._matches_tier(r, card)]
             if tier_matched:

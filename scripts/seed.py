@@ -555,11 +555,11 @@ def get_card_definitions():
                 ),
             ],
             "rules": [
-                # 5% on Amazon (Prime members only)
+                # 5% on Amazon (Prime members only): 1% base + 4% bonus
                 {
                     "category": "Amazon India",
-                    "base": 2.0,
-                    "bonus": 3.0,
+                    "base": 1.0,
+                    "bonus": 4.0,
                     "bucket_idx": 0,
                     "min_spend": 0,
                     "match_conditions": {"membership": "prime"},
@@ -652,16 +652,16 @@ def get_card_definitions():
                 billing_cycle_start=20,
                 rewards_currency="Amazon Pay Balance",
                 base_point_value=1.00,
-                # Tier status: Non-Prime member gets 3% on Amazon
+                # Tier status: Non-Prime member gets 2% on Amazon
                 tier_status={"membership": "non_prime"},
             ),
             "buckets": [],  # Usually, 3% is uncapped or high cap for non-prime
             "rules": [
-                # 3% on Amazon (Non-Prime members)
+                # 2% on Amazon (Non-Prime members): 1% base + 1% bonus
                 {
                     "category": "Amazon India",
                     "base": 1.0,
-                    "bonus": 2.0,
+                    "bonus": 1.0,
                     "bucket_idx": None,
                     "min_spend": 0,
                     "match_conditions": {"membership": "non_prime"},
