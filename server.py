@@ -11,7 +11,7 @@ from sqlmodel import Session, and_, col, or_, select
 
 from src.db import engine
 from src.models import CapBucket, CreditCard, Expense, RewardRule
-from src.rewards import calculate_rewards
+from src.logic.rewards import calculate_rewards
 
 # Path to categories data
 CATEGORIES_FILE = Path(__file__).parent / "data" / "categories.json"

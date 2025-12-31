@@ -1,11 +1,5 @@
 import random
-import sys
 from datetime import datetime, timedelta
-from pathlib import Path
-
-# --- PATH FIXER ---
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.append(str(PROJECT_ROOT))
 
 from sqlmodel import Session, select
 

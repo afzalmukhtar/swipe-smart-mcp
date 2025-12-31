@@ -7,18 +7,12 @@ Tests:
 3. Card without tier_status → gets universal rules only
 """
 
-import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.append(str(PROJECT_ROOT))
-
 from datetime import datetime
 
 from sqlmodel import Session, select
 
-from src import CreditCard, Expense, RewardRule, create_db_and_tables, engine
-from src.rewards import RewardsEngine
+from src import CreditCard, Expense, create_db_and_tables, engine
+from src.logic.rewards import RewardsEngine
 
 
 def test_tier_matching():

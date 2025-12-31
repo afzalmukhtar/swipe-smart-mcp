@@ -1,9 +1,5 @@
-# src/__init__.py
-
-# Database access
 from .db import create_db_and_tables, engine
-
-# Models
+from .logic.rewards import RewardResult, RewardsEngine, calculate_rewards
 from .models import (
     BucketScope,
     CapBucket,
@@ -14,3 +10,19 @@ from .models import (
     RedemptionPartner,
     RewardRule,
 )
+
+__all__ = [
+    "create_db_and_tables",
+    "engine",
+    "BucketScope",
+    "CapBucket",
+    "CapType",
+    "CreditCard",
+    "Expense",
+    "PeriodType",
+    "RedemptionPartner",
+    "RewardRule",
+    "RewardResult",
+    "RewardsEngine",
+    "calculate_rewards",
+]

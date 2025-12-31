@@ -1,10 +1,13 @@
 [project]
 name = "financial-mcp-server"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server for credit card rewards tracking and optimization"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "mcp[cli]>=1.25.0",
     "sqlmodel>=0.0.30",
 ]
+
+[tool.setuptools]
+packages = ["src", "src.logic", "scripts"]
