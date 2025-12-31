@@ -774,101 +774,86 @@ def _get_issuer_domain(bank: str) -> str | None:
 
 def _build_card_queries(card_name: str, issuer_domain: str | None = None) -> list[dict]:
     """
-    Build targeted search queries for credit card info.
+    Build exhaustive search queries for credit card info.
     Returns list of {query, category, priority} dicts.
+    
+    Based on comprehensive analysis of 150 queries across 70+ domains.
+    Prioritizes high-signal sources: TechnoFino, CardExpert, Reddit, official PDFs.
     """
 
-    def site_prefix(q: str) -> str:
-        return f"site:{issuer_domain} {q}" if issuer_domain else q
-
-    queries = [
-        # 1) Primary authoritative docs (PDF-first) - HIGHEST PRIORITY
-        {
-            "query": site_prefix(f'"{card_name}" MITC rewards filetype:pdf'),
-            "category": "official_docs",
-            "priority": 1,
-        },
-        {
-            "query": site_prefix(f'"{card_name}" "Key Facts Statement" filetype:pdf'),
-            "category": "official_docs",
-            "priority": 1,
-        },
-        {
-            "query": site_prefix(f'"{card_name}" "fees and charges" filetype:pdf'),
-            "category": "official_docs",
-            "priority": 2,
-        },
-        {
-            "query": site_prefix(
-                f'"{card_name}" "reward points" "terms and conditions" filetype:pdf'
-            ),
-            "category": "official_docs",
-            "priority": 2,
-        },
-        # 2) Rewards math + earning rules
-        {
-            "query": site_prefix(
-                f'"{card_name}" "earn rate" "reward points" "per 100"'
-            ),
-            "category": "rewards_math",
-            "priority": 3,
-        },
-        {
-            "query": site_prefix(f'"{card_name}" rounding posting "reward points"'),
-            "category": "rewards_math",
-            "priority": 4,
-        },
-        {
-            "query": site_prefix(f'"{card_name}" expiry validity "reward points"'),
-            "category": "rewards_math",
-            "priority": 4,
-        },
-        # 3) Caps + exclusions + MCC gotchas (critical for calculators)
-        {
-            "query": site_prefix(
-                f'"{card_name}" cap capping "per month" "reward points"'
-            ),
-            "category": "caps_exclusions",
-            "priority": 2,
-        },
-        {
-            "query": site_prefix(
-                f'"{card_name}" excluded exclusions MCC "not eligible"'
-            ),
-            "category": "caps_exclusions",
-            "priority": 3,
-        },
-        # 4) Partners / transfer / redemption value
-        {
-            "query": site_prefix(f'"{card_name}" "transfer partner" "air miles" ratio'),
-            "category": "partners",
-            "priority": 4,
-        },
-        {
-            "query": site_prefix(
-                f'"{card_name}" redeem redemption "reward points" value'
-            ),
-            "category": "partners",
-            "priority": 4,
-        },
-        # 5) Deep dive reviewers (CardExpert, CardMaven style)
-        {
-            "query": f'"{card_name}" review rewards benefits accelerated categories India',
-            "category": "reviews",
-            "priority": 3,
-        },
-        # 6) Community sources (TechnoFino + Reddit) - for edge cases
-        {
-            "query": f'site:technofino.in "{card_name}" cap exclusion MCC accelerated',
-            "category": "community",
-            "priority": 5,
-        },
-        {
-            "query": f'site:reddit.com "r/CreditCardsIndia" "{card_name}" cap exclusion rewards',
-            "category": "community",
-            "priority": 5,
-        },
-    ]
+    queries = []
+    
+    # ==================== TIER 1: OFFICIAL DOCS ====================
+    if issuer_domain:
+        queries.extend([
+            {"query": f'site:{issuer_domain} "{card_name}" MITC filetype:pdf', "category": "official_docs", "priority": 1},
+            {"query": f'site:{issuer_domain} "{card_name}" KFS filetype:pdf', "category": "official_docs", "priority": 1},
+            {"query": f'site:{issuer_domain} "{card_name}" fees charges', "category": "official_docs", "priority": 1},
+        ])
+    queries.extend([
+        {"query": f'"{card_name}" MITC filetype:pdf', "category": "official_docs", "priority": 1},
+        {"query": f'"{card_name}" "Key Facts Statement" filetype:pdf', "category": "official_docs", "priority": 1},
+    ])
+    
+    # ==================== TIER 1: COMMUNITY (BEST FOR EDGE CASES) ====================
+    queries.extend([
+        {"query": f'site:technofino.in "{card_name}" cap exclusion MCC', "category": "community", "priority": 1},
+        {"query": f'site:technofino.in "{card_name}" devaluation rewards', "category": "community", "priority": 1},
+        {"query": f'site:technofino.in "{card_name}" rupay upi threshold', "category": "community", "priority": 1},
+        {"query": f'site:reddit.com/r/CreditCardsIndia "{card_name}"', "category": "community", "priority": 1},
+        {"query": f'site:reddit.com/r/CreditCardsIndia "{card_name}" cap exclusion', "category": "community", "priority": 2},
+    ])
+    
+    # ==================== TIER 1: CC REVIEW SITES ====================
+    queries.extend([
+        {"query": f'site:cardexpert.in "{card_name}"', "category": "cc_review", "priority": 1},
+        {"query": f'site:cardinsider.com "{card_name}"', "category": "cc_review", "priority": 1},
+        {"query": f'site:cardmaven.in "{card_name}"', "category": "cc_review", "priority": 2},
+        {"query": f'site:rewardmatrix.in "{card_name}"', "category": "cc_review", "priority": 2},
+        {"query": f'site:pointsmath.com "{card_name}"', "category": "cc_review", "priority": 2},
+    ])
+    
+    # ==================== TIER 2: AGGREGATORS ====================
+    queries.extend([
+        {"query": f'site:paisabazaar.com "{card_name}"', "category": "aggregator", "priority": 2},
+        {"query": f'site:bankbazaar.com "{card_name}"', "category": "aggregator", "priority": 3},
+        {"query": f'site:1finance.co.in "{card_name}"', "category": "aggregator", "priority": 2},
+    ])
+    
+    # ==================== TIER 2: FINANCIAL SITES ====================
+    queries.extend([
+        {"query": f'site:finology.in "{card_name}"', "category": "financial", "priority": 3},
+        {"query": f'site:ourmoneyguide.com "{card_name}"', "category": "financial", "priority": 3},
+        {"query": f'site:cardnitty.com "{card_name}"', "category": "financial", "priority": 3},
+    ])
+    
+    # ==================== REWARDS MATH ====================
+    queries.extend([
+        {"query": f'"{card_name}" reward rate "per 100" cashback', "category": "rewards_math", "priority": 2},
+        {"query": f'"{card_name}" accelerated bonus categories rewards', "category": "rewards_math", "priority": 2},
+        {"query": f'"{card_name}" milestone welcome bonus rewards', "category": "rewards_math", "priority": 3},
+        {"query": f'"{card_name}" expiry validity forfeiture rewards', "category": "rewards_math", "priority": 3},
+    ])
+    
+    # ==================== CAPS & EXCLUSIONS ====================
+    queries.extend([
+        {"query": f'"{card_name}" cap capping maximum "per month" rewards', "category": "caps_exclusions", "priority": 1},
+        {"query": f'"{card_name}" excluded exclusions MCC "not eligible"', "category": "caps_exclusions", "priority": 1},
+        {"query": f'"{card_name}" fuel rent wallet insurance excluded', "category": "caps_exclusions", "priority": 2},
+    ])
+    
+    # ==================== VARIANT / NETWORK RULES ====================
+    queries.extend([
+        {"query": f'"{card_name}" RuPay Visa Mastercard variant network', "category": "variant_rules", "priority": 2},
+        {"query": f'"{card_name}" RuPay UPI minimum threshold "₹500"', "category": "variant_rules", "priority": 2},
+        {"query": f'"{card_name}" UPI excluded "no rewards" MCC', "category": "variant_rules", "priority": 2},
+    ])
+    
+    # ==================== REDEMPTION / TRANSFER ====================
+    queries.extend([
+        {"query": f'"{card_name}" redemption value "point value"', "category": "redemption", "priority": 3},
+        {"query": f'"{card_name}" transfer partners airlines hotels', "category": "redemption", "priority": 3},
+    ])
 
     return queries
 
@@ -935,16 +920,15 @@ def search_card_info(card_name: str, bank: str = "", max_results: int = 15) -> d
 
         # Group by category for easier processing
         categorized = {
-            "official_docs": [
-                r for r in all_results if r["category"] == "official_docs"
-            ],
-            "rewards_math": [r for r in all_results if r["category"] == "rewards_math"],
-            "caps_exclusions": [
-                r for r in all_results if r["category"] == "caps_exclusions"
-            ],
-            "partners": [r for r in all_results if r["category"] == "partners"],
-            "reviews": [r for r in all_results if r["category"] == "reviews"],
+            "official_docs": [r for r in all_results if r["category"] == "official_docs"],
             "community": [r for r in all_results if r["category"] == "community"],
+            "cc_review": [r for r in all_results if r["category"] == "cc_review"],
+            "aggregator": [r for r in all_results if r["category"] == "aggregator"],
+            "financial": [r for r in all_results if r["category"] == "financial"],
+            "rewards_math": [r for r in all_results if r["category"] == "rewards_math"],
+            "caps_exclusions": [r for r in all_results if r["category"] == "caps_exclusions"],
+            "variant_rules": [r for r in all_results if r["category"] == "variant_rules"],
+            "redemption": [r for r in all_results if r["category"] == "redemption"],
         }
 
         return {
