@@ -32,6 +32,17 @@ class BucketScope(str, Enum):
     CATEGORY = "category"  # Applies to specific categories/rules
 
 
+class AdjustmentType(str, Enum):
+    """Type of point adjustment."""
+
+    REDEMPTION = "redemption"  # Points redeemed for rewards/transfers
+    SIGNUP_BONUS = "signup_bonus"  # Welcome bonus
+    REFERRAL = "referral"  # Referral bonus
+    PROMO = "promo"  # Promotional credit
+    CORRECTION = "correction"  # Manual correction
+    EXPIRATION = "expiration"  # Points expired
+
+
 # --- 1. The Credit Card Model ---
 class CreditCard(SQLModel, table=True):
     """
@@ -74,6 +85,9 @@ class CreditCard(SQLModel, table=True):
         back_populates="card", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     reward_rules: list["RewardRule"] = Relationship(
+        back_populates="card", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    point_adjustments: list["PointAdjustment"] = Relationship(
         back_populates="card", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -181,3 +195,25 @@ class Expense(SQLModel, table=True):
 
     # Debugging / User Info
     notes: Optional[str] = None
+
+
+# --- 6. Point Adjustment Model ---
+class PointAdjustment(SQLModel, table=True):
+    """
+    Tracks point adjustments (redemptions, bonuses, corrections).
+    
+    Positive amount = points added (bonus, promo)
+    Negative amount = points removed (redemption, expiration)
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    card_id: int = Field(foreign_key="creditcard.id")
+
+    amount: float  # +ve for bonus, -ve for redemption
+    adjustment_type: AdjustmentType
+    description: str  # "Redeemed for Amazon voucher", "Welcome bonus"
+    reference: Optional[str] = None  # Order ID, promo code, etc.
+
+    date: datetime = Field(default_factory=datetime.now)
+
+    card: Optional[CreditCard] = Relationship(back_populates="point_adjustments")

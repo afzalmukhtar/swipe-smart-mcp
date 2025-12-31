@@ -3,15 +3,25 @@ import traceback
 from datetime import datetime
 from logging import getLogger
 from pathlib import Path
-from textwrap import dedent
 from typing import Optional
 
+from ddgs import DDGS
 from mcp.server.fastmcp import FastMCP
 from sqlmodel import Session, and_, col, func, or_, select
 
 from src.db import engine
-from src.models import CapBucket, CreditCard, Expense, RewardRule
 from src.logic.rewards import calculate_rewards
+from src.models import (
+    AdjustmentType,
+    BucketScope,
+    CapBucket,
+    CreditCard,
+    Expense,
+    PeriodType,
+    PointAdjustment,
+    RedemptionPartner,
+    RewardRule,
+)
 
 # Path to categories data
 CATEGORIES_FILE = Path(__file__).parent / "data" / "categories.json"
@@ -674,29 +684,551 @@ def add_transaction(
 # --------------------- Wallet ---------------------
 # This is the main wallet that contains your credit cards
 # --------------------------------------------------
+
+
+@mcp.tool()
+def get_card_addition_guidelines() -> dict:
+    """
+    **IMPORTANT: Call this tool BEFORE adding any credit card.**
+
+    Returns guidelines for adding a new credit card, including:
+    - What information to collect from the user (REQUIRED - only user knows)
+    - What information to search online (reward rules, caps, etc.)
+    - The workflow for adding a card step by step
+
+    You MUST read these guidelines before starting the card addition workflow.
+    """
+    return {
+        "status": "success",
+        "workflow": [
+            "1. Call this tool to get guidelines",
+            "2. Collect REQUIRED fields from user (they must provide these)",
+            "3. Call search_card_info(card_name) to find reward rules online",
+            "4. Call add_credit_card with user-provided info → get card_id",
+            "5. Call add_cap_buckets if card has caps (BEFORE rules if rules reference caps)",
+            "6. Call add_reward_rules with rules extracted from search",
+            "7. Call add_redemption_partners if card has transfer partners",
+        ],
+        "user_required_fields": {
+            "name": "Full card name (e.g., 'HDFC Regalia Gold', 'SBI Cashback')",
+            "bank": "Issuing bank (e.g., 'HDFC', 'SBI', 'ICICI', 'Axis', 'Amex')",
+            "monthly_limit": "Credit limit in INR (e.g., 500000)",
+            "billing_cycle_start": "Day of month when bill generates (1-31)",
+        },
+        "user_optional_fields": {
+            "network": "Card network - Default: 'Visa'. Options: Visa, Mastercard, RuPay, Amex, Diners",
+            "tier_status": "Membership tiers if applicable (e.g., {'membership': 'prime'} for Amazon ICICI)",
+        },
+        "search_for_online": [
+            "Reward rates by category (e.g., 5% on dining, 2% on all spends)",
+            "Accelerated categories and platforms (e.g., 10x on SmartBuy)",
+            "Monthly/yearly caps on rewards",
+            "Point value and redemption options",
+            "Transfer partners (airlines, hotels) and ratios",
+            "Card benefits summary for description field",
+        ],
+        "valid_networks": ["Visa", "Mastercard", "RuPay", "Amex", "Diners"],
+        "common_rewards_currencies": [
+            "Reward Points",
+            "Cashback",
+            "Amazon Pay Balance",
+            "Membership Rewards",
+            "Miles",
+        ],
+        "behavior_rules": [
+            "ALWAYS ask user for: name, bank, monthly_limit, billing_cycle_start",
+            "NEVER guess the credit limit or billing date - user MUST provide",
+            "Search online for reward rules, caps, and benefits",
+            "Use card description to summarize key benefits for future reference",
+            "If card has tiered rewards (Prime/Non-Prime), set tier_status accordingly",
+        ],
+        "example_flow": {
+            "user_says": "Add my HDFC Regalia Gold card",
+            "you_ask": "I'll help you add the HDFC Regalia Gold. I need a few details:\n1. What's your credit limit?\n2. What day does your billing cycle start (1-31)?",
+            "user_provides": "Limit is 5 lakhs, billing on 15th",
+            "then": "Call search_card_info('HDFC Regalia Gold') to get reward rules, then call add_credit_card",
+        },
+    }
+
+
+@mcp.tool()
+def search_card_info(card_name: str, max_results: int = 5) -> dict:
+    """
+    Searches the web for credit card reward information using DuckDuckGo.
+    Use this to find reward rules, caps, and benefits before adding a card.
+
+    Args:
+        card_name: The name of the credit card (e.g., "HDFC Regalia Gold", "SBI Cashback").
+        max_results: Maximum number of search results to return. Default 5.
+
+    Returns:
+        dict with search results containing titles, snippets, and URLs.
+        Use this information to extract reward rules for add_reward_rules().
+    """
+    try:
+        # Search queries optimized for Indian credit card info
+        queries = [
+            f"{card_name} reward points benefits India",
+            f"{card_name} cashback categories accelerated rewards",
+        ]
+
+        all_results = []
+
+        with DDGS() as ddgs:
+            for query in queries:
+                try:
+                    results = list(ddgs.text(query, max_results=max_results))
+                    for r in results:
+                        all_results.append(
+                            {
+                                "title": r.get("title", ""),
+                                "snippet": r.get("body", ""),
+                                "url": r.get("href", ""),
+                            }
+                        )
+                except Exception as e:
+                    logger.warning(f"Search query failed: {query} - {e}")
+                    continue
+
+        # Deduplicate by URL
+        seen_urls = set()
+        unique_results = []
+        for r in all_results:
+            if r["url"] not in seen_urls:
+                seen_urls.add(r["url"])
+                unique_results.append(r)
+
+        if not unique_results:
+            return {
+                "status": "warning",
+                "message": f"No results found for '{card_name}'. You may need to add rules manually.",
+                "results": [],
+            }
+
+        return {
+            "status": "success",
+            "card_name": card_name,
+            "results_count": len(unique_results),
+            "results": unique_results[
+                : max_results * 2
+            ],  # Return up to 2x max_results after dedup
+            "instructions": [
+                "Extract reward rates from the search results (e.g., '5% on dining', '10x on SmartBuy')",
+                "Convert percentages to multipliers: 5% = 0.05, 10% = 0.10",
+                "Note any caps mentioned (e.g., 'max 5000 points/month')",
+                "Identify the rewards currency (Points, Cashback, Miles)",
+                "Look for transfer partners if mentioned",
+            ],
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching for card info: {e}")
+        return {
+            "status": "error",
+            "message": f"Search failed: {str(e)}. You may need to add rules manually.",
+        }
+
+
 @mcp.tool()
 def add_credit_card(
     name: str,
     bank: str,
     monthly_limit: float,
     billing_cycle_start: int,
-    base_reward_rate: float = 1.0,
-) -> str:
+    network: str = "Visa",
+    rewards_currency: str = "Reward Points",
+    base_point_value: float = 0.25,
+    description: Optional[str] = None,
+    tier_status: Optional[dict] = None,
+) -> dict:
     """
-    Registers a new credit card in the database.
+    Registers a new credit card in the database with basic user-provided info.
+
+    This is STEP 1 of adding a card. After this, call:
+    - add_reward_rules() to add reward rules
+    - add_cap_buckets() to add spending caps
+    - add_redemption_partners() to add transfer partners
 
     Args:
-        name: The nickname of the card (e.g., "Amex Platinum", "Axis Magnus").
-        bank: The issuing bank (e.g., "HDFC", "SBI").
-        monthly_limit: The credit limit in account currency.
-        billing_cycle_start: The day of the month the bill generates (1-31).
-        base_reward_rate: The default points earned per unit spent (default: 1.0).
+        name: Full card name (e.g., "HDFC Regalia Gold", "SBI Cashback").
+        bank: Issuing bank (e.g., "HDFC", "SBI", "ICICI").
+        monthly_limit: Credit limit in INR.
+        billing_cycle_start: Day of month when bill generates (1-31).
+        network: Card network. Default "Visa". Options: Visa, Mastercard, RuPay, Amex, Diners.
+        rewards_currency: Type of rewards. Default "Reward Points". Options: Reward Points, Cashback, Miles, etc.
+        base_point_value: Value per point in INR. Default 0.25. (e.g., 0.25 means 1 point = ₹0.25).
+        description: Card benefits summary (from online search). Helps LLM understand card features.
+        tier_status: Membership tiers as dict (e.g., {"membership": "prime"} for Amazon ICICI Prime).
 
     Returns:
-        A confirmation message including the new Card ID.
+        dict with status, card_id (needed for adding rules), and card details.
     """
-    logger.info(f"Adding credit card: {name}")
-    return f"Credit card '{name}' added successfully."
+    try:
+        # Validate billing_cycle_start
+        if not 1 <= billing_cycle_start <= 31:
+            return {
+                "status": "error",
+                "message": "billing_cycle_start must be between 1 and 31.",
+            }
+
+        # Validate network
+        valid_networks = ["Visa", "Mastercard", "RuPay", "Amex", "Diners", "Unknown"]
+        if network not in valid_networks:
+            return {
+                "status": "error",
+                "message": f"Invalid network. Must be one of: {valid_networks}",
+            }
+
+        with Session(engine) as session:
+            # Check if card with same name already exists
+            existing = session.exec(
+                select(CreditCard).where(col(CreditCard.name).ilike(name))
+            ).first()
+
+            if existing:
+                return {
+                    "status": "error",
+                    "message": f"Card '{name}' already exists with ID {existing.id}. Use a different name or delete the existing card first.",
+                }
+
+            # Create the card
+            card = CreditCard(
+                name=name,
+                bank=bank,
+                network=network,
+                monthly_limit=monthly_limit,
+                billing_cycle_start=billing_cycle_start,
+                rewards_currency=rewards_currency,
+                base_point_value=base_point_value,
+                description=description,
+                tier_status=tier_status or {},
+            )
+
+            session.add(card)
+            session.commit()
+            session.refresh(card)
+
+            logger.info(f"Added credit card: {name} (ID: {card.id})")
+
+            return {
+                "status": "success",
+                "message": f"✅ Card '{name}' added successfully!",
+                "card_id": card.id,
+                "card": {
+                    "id": card.id,
+                    "name": card.name,
+                    "bank": card.bank,
+                    "network": card.network,
+                    "monthly_limit": card.monthly_limit,
+                    "billing_cycle_start": card.billing_cycle_start,
+                    "rewards_currency": card.rewards_currency,
+                    "base_point_value": card.base_point_value,
+                },
+                "next_steps": [
+                    f"Call add_reward_rules(card_id={card.id}, rules=[...]) to add reward rules",
+                    f"Call add_cap_buckets(card_id={card.id}, buckets=[...]) if card has caps",
+                    f"Call add_redemption_partners(card_id={card.id}, partners=[...]) if card has transfer partners",
+                ],
+            }
+
+    except Exception as e:
+        logger.error(f"Error adding credit card: {e}")
+        logger.error(traceback.format_exc())
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def add_reward_rules(card_id: int, rules: list[dict]) -> dict:
+    """
+    Adds reward rules to an existing credit card. Call this AFTER add_credit_card.
+
+    Each rule defines how points are earned for a specific category/merchant/platform.
+
+    Args:
+        card_id: The ID of the card (returned by add_credit_card).
+        rules: List of rule dictionaries. Each rule should have:
+            - category (str): Category name, merchant, or platform (e.g., "Dining", "Amazon", "SmartBuy")
+            - base_multiplier (float): Base reward rate (e.g., 0.02 for 2%)
+            - bonus_multiplier (float): Additional bonus rate (e.g., 0.03 for 3% extra). Default 0.
+            - min_spend (float): Minimum spend to trigger rule. Default 0.
+            - match_conditions (dict): Tier conditions (e.g., {"membership": "prime"}). Default None.
+            - cap_bucket_name (str): Name of cap bucket to link. Default None.
+
+    Returns:
+        dict with status and list of created rule IDs.
+
+    Example:
+        add_reward_rules(card_id=1, rules=[
+            {"category": "Dining", "base_multiplier": 0.04, "bonus_multiplier": 0.01},
+            {"category": "All Spends", "base_multiplier": 0.02, "bonus_multiplier": 0},
+            {"category": "SmartBuy", "base_multiplier": 0.10, "cap_bucket_name": "SmartBuy Monthly Cap"},
+        ])
+    """
+    try:
+        if not rules:
+            return {"status": "error", "message": "No rules provided."}
+
+        with Session(engine) as session:
+            # Verify card exists
+            card = session.get(CreditCard, card_id)
+            if not card:
+                return {
+                    "status": "error",
+                    "message": f"Card with ID {card_id} not found.",
+                }
+
+            # Get existing cap buckets for this card (for linking)
+            existing_buckets = session.exec(
+                select(CapBucket).where(CapBucket.card_id == card_id)
+            ).all()
+            bucket_map = {b.name: b.id for b in existing_buckets}
+
+            created_rules = []
+            for rule_data in rules:
+                # Validate required fields
+                if "category" not in rule_data:
+                    return {
+                        "status": "error",
+                        "message": "Each rule must have a 'category' field.",
+                    }
+                if "base_multiplier" not in rule_data:
+                    return {
+                        "status": "error",
+                        "message": f"Rule for '{rule_data['category']}' missing 'base_multiplier'.",
+                    }
+
+                # Find cap bucket if specified
+                cap_bucket_id = None
+                if "cap_bucket_name" in rule_data and rule_data["cap_bucket_name"]:
+                    bucket_name = rule_data["cap_bucket_name"]
+                    if bucket_name in bucket_map:
+                        cap_bucket_id = bucket_map[bucket_name]
+                    else:
+                        return {
+                            "status": "error",
+                            "message": f"Cap bucket '{bucket_name}' not found. Create it first with add_cap_buckets.",
+                        }
+
+                rule = RewardRule(
+                    card_id=card_id,
+                    category=rule_data["category"],
+                    base_multiplier=rule_data["base_multiplier"],
+                    bonus_multiplier=rule_data.get("bonus_multiplier", 0.0),
+                    min_spend=rule_data.get("min_spend", 0.0),
+                    match_conditions=rule_data.get("match_conditions"),
+                    cap_bucket_id=cap_bucket_id,
+                )
+                session.add(rule)
+                session.flush()  # Get the ID
+                created_rules.append(
+                    {
+                        "id": rule.id,
+                        "category": rule.category,
+                        "rate": f"{(rule.base_multiplier + rule.bonus_multiplier) * 100:.1f}%",
+                    }
+                )
+
+            session.commit()
+
+            return {
+                "status": "success",
+                "message": f"✅ Added {len(created_rules)} reward rules to {card.name}",
+                "card_id": card_id,
+                "rules_created": created_rules,
+            }
+
+    except Exception as e:
+        logger.error(f"Error adding reward rules: {e}")
+        logger.error(traceback.format_exc())
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def add_cap_buckets(card_id: int, buckets: list[dict]) -> dict:
+    """
+    Adds cap buckets (spending limits) to an existing credit card.
+    Call this BEFORE add_reward_rules if rules need to reference caps.
+
+    Args:
+        card_id: The ID of the card (returned by add_credit_card).
+        buckets: List of bucket dictionaries. Each bucket should have:
+            - name (str): Descriptive name (e.g., "SmartBuy Monthly Cap", "Dining Quarterly Cap")
+            - max_points (float): Maximum points that can be earned in this bucket
+            - period (str): Reset period. Options: "daily", "statement_month", "quarter", "statement_year". Default "statement_month".
+            - scope (str): What the cap applies to. Options: "category", "global". Default "category".
+
+    Returns:
+        dict with status and list of created bucket IDs.
+
+    Example:
+        add_cap_buckets(card_id=1, buckets=[
+            {"name": "SmartBuy Monthly Cap", "max_points": 5000, "period": "statement_month"},
+            {"name": "Total Monthly Cap", "max_points": 15000, "period": "statement_month", "scope": "global"},
+        ])
+    """
+    try:
+        if not buckets:
+            return {"status": "error", "message": "No buckets provided."}
+
+        valid_periods = ["daily", "statement_month", "quarter", "statement_year"]
+        valid_scopes = ["category", "global"]
+
+        with Session(engine) as session:
+            # Verify card exists
+            card = session.get(CreditCard, card_id)
+            if not card:
+                return {
+                    "status": "error",
+                    "message": f"Card with ID {card_id} not found.",
+                }
+
+            created_buckets = []
+            for bucket_data in buckets:
+                # Validate required fields
+                if "name" not in bucket_data:
+                    return {
+                        "status": "error",
+                        "message": "Each bucket must have a 'name' field.",
+                    }
+                if "max_points" not in bucket_data:
+                    return {
+                        "status": "error",
+                        "message": f"Bucket '{bucket_data['name']}' missing 'max_points'.",
+                    }
+
+                # Validate period
+                period_str = bucket_data.get("period", "statement_month")
+                if period_str not in valid_periods:
+                    return {
+                        "status": "error",
+                        "message": f"Invalid period '{period_str}'. Must be one of: {valid_periods}",
+                    }
+
+                # Validate scope
+                scope_str = bucket_data.get("scope", "category")
+                if scope_str not in valid_scopes:
+                    return {
+                        "status": "error",
+                        "message": f"Invalid scope '{scope_str}'. Must be one of: {valid_scopes}",
+                    }
+
+                bucket = CapBucket(
+                    card_id=card_id,
+                    name=bucket_data["name"],
+                    max_points=bucket_data["max_points"],
+                    period=PeriodType(period_str),
+                    bucket_scope=BucketScope(scope_str),
+                )
+                session.add(bucket)
+                session.flush()
+                created_buckets.append(
+                    {
+                        "id": bucket.id,
+                        "name": bucket.name,
+                        "max_points": bucket.max_points,
+                        "period": period_str,
+                    }
+                )
+
+            session.commit()
+
+            return {
+                "status": "success",
+                "message": f"✅ Added {len(created_buckets)} cap buckets to {card.name}",
+                "card_id": card_id,
+                "buckets_created": created_buckets,
+            }
+
+    except Exception as e:
+        logger.error(f"Error adding cap buckets: {e}")
+        logger.error(traceback.format_exc())
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def add_redemption_partners(card_id: int, partners: list[dict]) -> dict:
+    """
+    Adds redemption/transfer partners to an existing credit card.
+    These are airlines, hotels, or other programs where points can be transferred.
+
+    Args:
+        card_id: The ID of the card (returned by add_credit_card).
+        partners: List of partner dictionaries. Each should have:
+            - partner_name (str): Name of the partner (e.g., "Singapore Airlines", "Marriott")
+            - transfer_ratio (float): Points needed per 1 partner point (e.g., 2.0 means 2 card points = 1 mile)
+            - estimated_value (float): Estimated value per partner point in INR (e.g., 1.5 for airline miles)
+
+    Returns:
+        dict with status and list of created partner IDs.
+
+    Example:
+        add_redemption_partners(card_id=1, partners=[
+            {"partner_name": "Singapore Airlines", "transfer_ratio": 1.0, "estimated_value": 1.50},
+            {"partner_name": "Marriott Bonvoy", "transfer_ratio": 2.0, "estimated_value": 0.80},
+        ])
+    """
+    try:
+        if not partners:
+            return {"status": "error", "message": "No partners provided."}
+
+        with Session(engine) as session:
+            # Verify card exists
+            card = session.get(CreditCard, card_id)
+            if not card:
+                return {
+                    "status": "error",
+                    "message": f"Card with ID {card_id} not found.",
+                }
+
+            created_partners = []
+            for partner_data in partners:
+                # Validate required fields
+                if "partner_name" not in partner_data:
+                    return {
+                        "status": "error",
+                        "message": "Each partner must have a 'partner_name' field.",
+                    }
+                if "transfer_ratio" not in partner_data:
+                    return {
+                        "status": "error",
+                        "message": f"Partner '{partner_data['partner_name']}' missing 'transfer_ratio'.",
+                    }
+                if "estimated_value" not in partner_data:
+                    return {
+                        "status": "error",
+                        "message": f"Partner '{partner_data['partner_name']}' missing 'estimated_value'.",
+                    }
+
+                partner = RedemptionPartner(
+                    card_id=card_id,
+                    partner_name=partner_data["partner_name"],
+                    transfer_ratio=partner_data["transfer_ratio"],
+                    estimated_value=partner_data["estimated_value"],
+                )
+                session.add(partner)
+                session.flush()
+                created_partners.append(
+                    {
+                        "id": partner.id,
+                        "name": partner.partner_name,
+                        "ratio": f"{partner.transfer_ratio}:1",
+                        "value": f"₹{partner.estimated_value}/point",
+                    }
+                )
+
+            session.commit()
+
+            return {
+                "status": "success",
+                "message": f"✅ Added {len(created_partners)} transfer partners to {card.name}",
+                "card_id": card_id,
+                "partners_created": created_partners,
+            }
+
+    except Exception as e:
+        logger.error(f"Error adding redemption partners: {e}")
+        logger.error(traceback.format_exc())
+        return {"status": "error", "message": str(e)}
 
 
 # ----------------- The Points System -----------------
@@ -717,7 +1249,9 @@ def get_reward_balance(card_name: str) -> dict:
     """
     try:
         with Session(engine) as session:
-            query = select(CreditCard).where(col(CreditCard.name).ilike(f"%{card_name}%"))
+            query = select(CreditCard).where(
+                col(CreditCard.name).ilike(f"%{card_name}%")
+            )
             cards = session.exec(query).all()
 
             if not cards:
@@ -733,24 +1267,47 @@ def get_reward_balance(card_name: str) -> dict:
             card = cards[0]
 
             # Get total points earned all time
-            total_points = session.exec(
-                select(func.sum(Expense.points_earned)).where(Expense.card_id == card.id)
-            ).first() or 0.0
+            total_points = (
+                session.exec(
+                    select(func.sum(Expense.points_earned)).where(
+                        Expense.card_id == card.id
+                    )
+                ).first()
+                or 0.0
+            )
 
             # Get points this month
             now = datetime.now()
             month_start = datetime(now.year, now.month, 1)
-            monthly_points = session.exec(
-                select(func.sum(Expense.points_earned)).where(
-                    Expense.card_id == card.id,
-                    Expense.date >= month_start,
-                )
-            ).first() or 0.0
+            monthly_points = (
+                session.exec(
+                    select(func.sum(Expense.points_earned)).where(
+                        Expense.card_id == card.id,
+                        Expense.date >= month_start,
+                    )
+                ).first()
+                or 0.0
+            )
 
             # Get transaction count
-            tx_count = session.exec(
-                select(func.count(Expense.id)).where(Expense.card_id == card.id)
-            ).first() or 0
+            tx_count = (
+                session.exec(
+                    select(func.count(Expense.id)).where(Expense.card_id == card.id)
+                ).first()
+                or 0
+            )
+
+            # Get total adjustments (bonuses - redemptions)
+            total_adjustments = (
+                session.exec(
+                    select(func.sum(PointAdjustment.amount)).where(
+                        PointAdjustment.card_id == card.id
+                    )
+                ).first()
+                or 0.0
+            )
+
+            current_balance = total_points + total_adjustments
 
             return {
                 "status": "success",
@@ -762,9 +1319,13 @@ def get_reward_balance(card_name: str) -> dict:
                     "point_value": card.base_point_value,
                 },
                 "balance": {
-                    "total_points": round(total_points, 2),
-                    "estimated_value": round(total_points * card.base_point_value, 2),
-                    "this_month": round(monthly_points, 2),
+                    "total_earned": round(total_points, 2),
+                    "total_adjustments": round(total_adjustments, 2),
+                    "current_balance": round(current_balance, 2),
+                    "estimated_value": round(
+                        current_balance * card.base_point_value, 2
+                    ),
+                    "earned_this_month": round(monthly_points, 2),
                     "transaction_count": tx_count,
                 },
             }
@@ -775,21 +1336,115 @@ def get_reward_balance(card_name: str) -> dict:
 
 
 @mcp.tool()
-def adjust_reward_points(card_name: str, points: int, reason: str) -> str:
+def adjust_reward_points(
+    card_name: str,
+    points: float,
+    reason: str,
+    adjustment_type: str = "correction",
+    reference: Optional[str] = None,
+) -> dict:
     """
-    Manually adjusts the point balance (adds or subtracts).
-    Use this for redemptions, expiration, or bonuses.
+    Adjusts the point balance for a card. Use for redemptions, bonuses, or corrections.
 
     Args:
         card_name: The card to adjust.
-        points: The number of points to add (positive) or remove (negative).
-        reason: A note explaining the adjustment (e.g., "Redeemed for flight", "Signup Bonus").
+        points: Points to add (+ve) or remove (-ve). Use negative for redemptions.
+        reason: Description (e.g., "Redeemed for Amazon voucher", "Welcome bonus").
+        adjustment_type: One of: redemption, signup_bonus, referral, promo, correction, expiration.
+        reference: Optional reference (order ID, promo code).
 
     Returns:
-        The new updated balance.
+        Dictionary with adjustment details and new balance.
     """
-    logger.info(f"Adjusting reward points: {card_name} {points} {reason}")
-    return "Reward points adjusted successfully."
+    try:
+        # Validate adjustment type
+        valid_types = [
+            "redemption",
+            "signup_bonus",
+            "referral",
+            "promo",
+            "correction",
+            "expiration",
+        ]
+        if adjustment_type not in valid_types:
+            return {
+                "status": "error",
+                "message": f"Invalid adjustment_type. Must be one of: {valid_types}",
+            }
+
+        with Session(engine) as session:
+            # Find the card
+            query = select(CreditCard).where(
+                col(CreditCard.name).ilike(f"%{card_name}%")
+            )
+            cards = session.exec(query).all()
+
+            if not cards:
+                return {"status": "error", "message": f"Card '{card_name}' not found."}
+
+            if len(cards) > 1:
+                return {
+                    "status": "error",
+                    "message": "Multiple cards found. Please be specific.",
+                    "matches": [{"id": c.id, "name": c.name} for c in cards],
+                }
+
+            card = cards[0]
+
+            # Create the adjustment
+            adjustment = PointAdjustment(
+                card_id=card.id,
+                amount=points,
+                adjustment_type=AdjustmentType(adjustment_type),
+                description=reason,
+                reference=reference,
+            )
+            session.add(adjustment)
+            session.commit()
+            session.refresh(adjustment)
+
+            # Calculate new balance
+            total_earned = (
+                session.exec(
+                    select(func.sum(Expense.points_earned)).where(
+                        Expense.card_id == card.id
+                    )
+                ).first()
+                or 0.0
+            )
+
+            total_adjustments = (
+                session.exec(
+                    select(func.sum(PointAdjustment.amount)).where(
+                        PointAdjustment.card_id == card.id
+                    )
+                ).first()
+                or 0.0
+            )
+
+            new_balance = total_earned + total_adjustments
+
+            return {
+                "status": "success",
+                "message": f"Points adjusted: {'+' if points >= 0 else ''}{points}",
+                "adjustment": {
+                    "id": adjustment.id,
+                    "type": adjustment_type,
+                    "amount": points,
+                    "description": reason,
+                    "reference": reference,
+                    "date": adjustment.date.strftime("%Y-%m-%d %H:%M"),
+                },
+                "balance": {
+                    "total_earned": round(total_earned, 2),
+                    "total_adjustments": round(total_adjustments, 2),
+                    "current_balance": round(new_balance, 2),
+                },
+            }
+
+    except Exception as e:
+        logger.error(f"Error adjusting points: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
@@ -809,7 +1464,10 @@ def get_card_description(card_id: int) -> dict:
             card = session.get(CreditCard, card_id)
 
             if not card:
-                return {"status": "error", "message": f"Card with ID {card_id} not found."}
+                return {
+                    "status": "error",
+                    "message": f"Card with ID {card_id} not found.",
+                }
 
             return {
                 "status": "success",
