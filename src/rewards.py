@@ -41,7 +41,7 @@ class RewardsEngine:
     - Global caps second: No point calculating if card's total limit is hit
     - Waterfall last: Find best rule, calculate points, apply category-specific caps
     """
-    
+
     # Cap check priority: wider scope checked first
     # Why? If annual limit is hit, no point checking monthly limits
     PERIOD_PRIORITY = {
