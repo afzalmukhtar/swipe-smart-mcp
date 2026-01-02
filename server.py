@@ -708,10 +708,11 @@ def get_card_addition_guidelines() -> dict:
             "1. Call this tool to get guidelines",
             "2. Collect REQUIRED fields from user (they must provide these)",
             "3. Call search_card_info(card_name) to find reward rules online",
-            "4. Call add_credit_card with user-provided info → get card_id",
-            "5. Call add_cap_buckets if card has caps (BEFORE rules if rules reference caps)",
-            "6. Call add_reward_rules with rules extracted from search",
-            "7. Call add_redemption_partners if card has transfer partners",
+            "4. Review search results - if missing info for any category, use custom_web_search",
+            "5. Call add_credit_card with user-provided info → get card_id",
+            "6. Call add_cap_buckets if card has caps (BEFORE rules if rules reference caps)",
+            "7. Call add_reward_rules with rules for EVERY category (use all_expense_categories below)",
+            "8. Call add_redemption_partners if card has transfer partners",
         ],
         "user_required_fields": {
             "name": "Full card name (e.g., 'HDFC Regalia Gold', 'SBI Cashback')",
@@ -723,10 +724,11 @@ def get_card_addition_guidelines() -> dict:
             "network": "Card network - Default: 'Visa'. Options: Visa, Mastercard, RuPay, Amex, Diners",
             "tier_status": "Membership tiers if applicable (e.g., {'membership': 'prime'} for Amazon ICICI)",
         },
+        "all_expense_categories": get_category_names(),
         "search_for_online": [
-            "Reward rates by category (e.g., 5% on dining, 2% on all spends)",
+            "Reward rates for EVERY category listed in all_expense_categories",
             "Accelerated categories and platforms (e.g., 10x on SmartBuy)",
-            "Monthly/yearly caps on rewards",
+            "Monthly/yearly caps on rewards per category",
             "Point value and redemption options",
             "Transfer partners (airlines, hotels) and ratios",
             "Card benefits summary for description field",
@@ -743,12 +745,19 @@ def get_card_addition_guidelines() -> dict:
             "ALWAYS ask user for: name, bank, monthly_limit, billing_cycle_start",
             "NEVER guess the credit limit or billing date - user MUST provide",
             "Search online for reward rules, caps, and benefits",
+            "If search_card_info doesn't have info for a category, use custom_web_search with specific query",
+            "MUST add reward rules for EVERY category in all_expense_categories",
             "Use card description to summarize key benefits for future reference",
             "If card has tiered rewards (Prime/Non-Prime), set tier_status accordingly",
         ],
+        "re_search_guidance": {
+            "when": "If search_card_info results are missing reward rate for any category",
+            "how": "Use custom_web_search tool with specific query like: '{card_name} {category} rewards rate'",
+            "example": "custom_web_search('HDFC Regalia Dining rewards rate')",
+        },
         "example_flow": {
             "user_says": "Add my HDFC Regalia Gold card",
-            "you_ask": "I'll help you add the HDFC Regalia Gold. I need a few details:\n1. What's your credit limit?\n2. What day does your billing cycle start (1-31)?",
+            "you_ask": "I'll help you add the HDFC Regalia Gold. I need a few details:\\n1. What's your credit limit?\\n2. What day does your billing cycle start (1-31)?",
             "user_provides": "Limit is 5 lakhs, billing on 15th",
             "then": "Call search_card_info('HDFC Regalia Gold', 'HDFC') to get reward rules, then call add_credit_card",
         },
@@ -1008,6 +1017,26 @@ def _build_card_queries(card_name: str, issuer_domain: str | None = None) -> lis
         ]
     )
 
+    # ==================== CATEGORY-SPECIFIC REWARDS ====================
+    # Search for reward rates on ALL expense categories
+    all_categories = get_category_names()
+    for cat in all_categories:
+        queries.append(
+            {
+                "query": f'"{card_name}" "{cat}" rewards cashback rate',
+                "category": "category_rewards",
+                "priority": 2,
+            }
+        )
+        # Also search for caps per category
+        queries.append(
+            {
+                "query": f'"{card_name}" "{cat}" cap limit maximum',
+                "category": "category_caps",
+                "priority": 3,
+            }
+        )
+
     return queries
 
 
@@ -1088,6 +1117,12 @@ def search_card_info(card_name: str, bank: str = "", max_results: int = 15) -> d
                 r for r in all_results if r["category"] == "variant_rules"
             ],
             "redemption": [r for r in all_results if r["category"] == "redemption"],
+            "category_rewards": [
+                r for r in all_results if r["category"] == "category_rewards"
+            ],
+            "category_caps": [
+                r for r in all_results if r["category"] == "category_caps"
+            ],
         }
 
         return {
@@ -1125,6 +1160,52 @@ def search_card_info(card_name: str, bank: str = "", max_results: int = 15) -> d
             "status": "error",
             "message": f"Search failed: {str(e)}. You may need to add rules manually.",
         }
+
+
+@mcp.tool()
+def custom_web_search(query: str, max_results: int = 5) -> dict:
+    """
+    Performs a custom web search for specific credit card information.
+
+    Use this tool when you need to search for very specific information that
+    wasn't covered by the general search_card_info results. For example:
+    - Specific category reward rates: "HDFC Regalia Dining rewards rate"
+    - Specific cap information: "Axis Ace utilities cap per month"
+    - Recent changes: "SBI Cashback devaluation 2024"
+    - Platform-specific: "ICICI Amazon Pay SmartBuy rewards"
+
+    Args:
+        query: The exact search query to perform.
+        max_results: Maximum number of results (default: 5).
+
+    Returns:
+        dict: Search results with title, snippet, and URL.
+    """
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+
+            formatted = []
+            for r in results:
+                formatted.append(
+                    {
+                        "title": r.get("title", ""),
+                        "snippet": r.get("body", ""),
+                        "url": r.get("href", ""),
+                        "is_pdf": r.get("href", "").lower().endswith(".pdf"),
+                    }
+                )
+
+            return {
+                "status": "success",
+                "query": query,
+                "count": len(formatted),
+                "results": formatted,
+            }
+
+    except Exception as e:
+        logger.error(f"Custom search failed: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
