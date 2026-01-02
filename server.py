@@ -7,7 +7,7 @@ from typing import Optional
 
 from ddgs import DDGS
 from mcp.server.fastmcp import FastMCP
-from sqlmodel import Session, and_, col, func, or_, select
+from sqlmodel import Session, and_, col, func, or_, select, text
 
 from src.db import engine
 from src.logic.recommender import recommend_all_cards
@@ -777,84 +777,236 @@ def _build_card_queries(card_name: str, issuer_domain: str | None = None) -> lis
     """
     Build exhaustive search queries for credit card info.
     Returns list of {query, category, priority} dicts.
-    
+
     Based on comprehensive analysis of 150 queries across 70+ domains.
     Prioritizes high-signal sources: TechnoFino, CardExpert, Reddit, official PDFs.
     """
 
     queries = []
-    
+
     # ==================== TIER 1: OFFICIAL DOCS ====================
     if issuer_domain:
-        queries.extend([
-            {"query": f'site:{issuer_domain} "{card_name}" MITC filetype:pdf', "category": "official_docs", "priority": 1},
-            {"query": f'site:{issuer_domain} "{card_name}" KFS filetype:pdf', "category": "official_docs", "priority": 1},
-            {"query": f'site:{issuer_domain} "{card_name}" fees charges', "category": "official_docs", "priority": 1},
-        ])
-    queries.extend([
-        {"query": f'"{card_name}" MITC filetype:pdf', "category": "official_docs", "priority": 1},
-        {"query": f'"{card_name}" "Key Facts Statement" filetype:pdf', "category": "official_docs", "priority": 1},
-    ])
-    
+        queries.extend(
+            [
+                {
+                    "query": f'site:{issuer_domain} "{card_name}" MITC filetype:pdf',
+                    "category": "official_docs",
+                    "priority": 1,
+                },
+                {
+                    "query": f'site:{issuer_domain} "{card_name}" KFS filetype:pdf',
+                    "category": "official_docs",
+                    "priority": 1,
+                },
+                {
+                    "query": f'site:{issuer_domain} "{card_name}" fees charges',
+                    "category": "official_docs",
+                    "priority": 1,
+                },
+            ]
+        )
+    queries.extend(
+        [
+            {
+                "query": f'"{card_name}" MITC filetype:pdf',
+                "category": "official_docs",
+                "priority": 1,
+            },
+            {
+                "query": f'"{card_name}" "Key Facts Statement" filetype:pdf',
+                "category": "official_docs",
+                "priority": 1,
+            },
+        ]
+    )
+
     # ==================== TIER 1: COMMUNITY (BEST FOR EDGE CASES) ====================
-    queries.extend([
-        {"query": f'site:technofino.in "{card_name}" cap exclusion MCC', "category": "community", "priority": 1},
-        {"query": f'site:technofino.in "{card_name}" devaluation rewards', "category": "community", "priority": 1},
-        {"query": f'site:technofino.in "{card_name}" rupay upi threshold', "category": "community", "priority": 1},
-        {"query": f'site:reddit.com/r/CreditCardsIndia "{card_name}"', "category": "community", "priority": 1},
-        {"query": f'site:reddit.com/r/CreditCardsIndia "{card_name}" cap exclusion', "category": "community", "priority": 2},
-    ])
-    
+    queries.extend(
+        [
+            {
+                "query": f'site:technofino.in "{card_name}" cap exclusion MCC',
+                "category": "community",
+                "priority": 1,
+            },
+            {
+                "query": f'site:technofino.in "{card_name}" devaluation rewards',
+                "category": "community",
+                "priority": 1,
+            },
+            {
+                "query": f'site:technofino.in "{card_name}" rupay upi threshold',
+                "category": "community",
+                "priority": 1,
+            },
+            {
+                "query": f'site:reddit.com/r/CreditCardsIndia "{card_name}"',
+                "category": "community",
+                "priority": 1,
+            },
+            {
+                "query": f'site:reddit.com/r/CreditCardsIndia "{card_name}" cap exclusion',
+                "category": "community",
+                "priority": 2,
+            },
+        ]
+    )
+
     # ==================== TIER 1: CC REVIEW SITES ====================
-    queries.extend([
-        {"query": f'site:cardexpert.in "{card_name}"', "category": "cc_review", "priority": 1},
-        {"query": f'site:cardinsider.com "{card_name}"', "category": "cc_review", "priority": 1},
-        {"query": f'site:cardmaven.in "{card_name}"', "category": "cc_review", "priority": 2},
-        {"query": f'site:rewardmatrix.in "{card_name}"', "category": "cc_review", "priority": 2},
-        {"query": f'site:pointsmath.com "{card_name}"', "category": "cc_review", "priority": 2},
-    ])
-    
+    queries.extend(
+        [
+            {
+                "query": f'site:cardexpert.in "{card_name}"',
+                "category": "cc_review",
+                "priority": 1,
+            },
+            {
+                "query": f'site:cardinsider.com "{card_name}"',
+                "category": "cc_review",
+                "priority": 1,
+            },
+            {
+                "query": f'site:cardmaven.in "{card_name}"',
+                "category": "cc_review",
+                "priority": 2,
+            },
+            {
+                "query": f'site:rewardmatrix.in "{card_name}"',
+                "category": "cc_review",
+                "priority": 2,
+            },
+            {
+                "query": f'site:pointsmath.com "{card_name}"',
+                "category": "cc_review",
+                "priority": 2,
+            },
+        ]
+    )
+
     # ==================== TIER 2: AGGREGATORS ====================
-    queries.extend([
-        {"query": f'site:paisabazaar.com "{card_name}"', "category": "aggregator", "priority": 2},
-        {"query": f'site:bankbazaar.com "{card_name}"', "category": "aggregator", "priority": 3},
-        {"query": f'site:1finance.co.in "{card_name}"', "category": "aggregator", "priority": 2},
-    ])
-    
+    queries.extend(
+        [
+            {
+                "query": f'site:paisabazaar.com "{card_name}"',
+                "category": "aggregator",
+                "priority": 2,
+            },
+            {
+                "query": f'site:bankbazaar.com "{card_name}"',
+                "category": "aggregator",
+                "priority": 3,
+            },
+            {
+                "query": f'site:1finance.co.in "{card_name}"',
+                "category": "aggregator",
+                "priority": 2,
+            },
+        ]
+    )
+
     # ==================== TIER 2: FINANCIAL SITES ====================
-    queries.extend([
-        {"query": f'site:finology.in "{card_name}"', "category": "financial", "priority": 3},
-        {"query": f'site:ourmoneyguide.com "{card_name}"', "category": "financial", "priority": 3},
-        {"query": f'site:cardnitty.com "{card_name}"', "category": "financial", "priority": 3},
-    ])
-    
+    queries.extend(
+        [
+            {
+                "query": f'site:finology.in "{card_name}"',
+                "category": "financial",
+                "priority": 3,
+            },
+            {
+                "query": f'site:ourmoneyguide.com "{card_name}"',
+                "category": "financial",
+                "priority": 3,
+            },
+            {
+                "query": f'site:cardnitty.com "{card_name}"',
+                "category": "financial",
+                "priority": 3,
+            },
+        ]
+    )
+
     # ==================== REWARDS MATH ====================
-    queries.extend([
-        {"query": f'"{card_name}" reward rate "per 100" cashback', "category": "rewards_math", "priority": 2},
-        {"query": f'"{card_name}" accelerated bonus categories rewards', "category": "rewards_math", "priority": 2},
-        {"query": f'"{card_name}" milestone welcome bonus rewards', "category": "rewards_math", "priority": 3},
-        {"query": f'"{card_name}" expiry validity forfeiture rewards', "category": "rewards_math", "priority": 3},
-    ])
-    
+    queries.extend(
+        [
+            {
+                "query": f'"{card_name}" reward rate "per 100" cashback',
+                "category": "rewards_math",
+                "priority": 2,
+            },
+            {
+                "query": f'"{card_name}" accelerated bonus categories rewards',
+                "category": "rewards_math",
+                "priority": 2,
+            },
+            {
+                "query": f'"{card_name}" milestone welcome bonus rewards',
+                "category": "rewards_math",
+                "priority": 3,
+            },
+            {
+                "query": f'"{card_name}" expiry validity forfeiture rewards',
+                "category": "rewards_math",
+                "priority": 3,
+            },
+        ]
+    )
+
     # ==================== CAPS & EXCLUSIONS ====================
-    queries.extend([
-        {"query": f'"{card_name}" cap capping maximum "per month" rewards', "category": "caps_exclusions", "priority": 1},
-        {"query": f'"{card_name}" excluded exclusions MCC "not eligible"', "category": "caps_exclusions", "priority": 1},
-        {"query": f'"{card_name}" fuel rent wallet insurance excluded', "category": "caps_exclusions", "priority": 2},
-    ])
-    
+    queries.extend(
+        [
+            {
+                "query": f'"{card_name}" cap capping maximum "per month" rewards',
+                "category": "caps_exclusions",
+                "priority": 1,
+            },
+            {
+                "query": f'"{card_name}" excluded exclusions MCC "not eligible"',
+                "category": "caps_exclusions",
+                "priority": 1,
+            },
+            {
+                "query": f'"{card_name}" fuel rent wallet insurance excluded',
+                "category": "caps_exclusions",
+                "priority": 2,
+            },
+        ]
+    )
+
     # ==================== VARIANT / NETWORK RULES ====================
-    queries.extend([
-        {"query": f'"{card_name}" RuPay Visa Mastercard variant network', "category": "variant_rules", "priority": 2},
-        {"query": f'"{card_name}" RuPay UPI minimum threshold "₹500"', "category": "variant_rules", "priority": 2},
-        {"query": f'"{card_name}" UPI excluded "no rewards" MCC', "category": "variant_rules", "priority": 2},
-    ])
-    
+    queries.extend(
+        [
+            {
+                "query": f'"{card_name}" RuPay Visa Mastercard variant network',
+                "category": "variant_rules",
+                "priority": 2,
+            },
+            {
+                "query": f'"{card_name}" RuPay UPI minimum threshold "₹500"',
+                "category": "variant_rules",
+                "priority": 2,
+            },
+            {
+                "query": f'"{card_name}" UPI excluded "no rewards" MCC',
+                "category": "variant_rules",
+                "priority": 2,
+            },
+        ]
+    )
+
     # ==================== REDEMPTION / TRANSFER ====================
-    queries.extend([
-        {"query": f'"{card_name}" redemption value "point value"', "category": "redemption", "priority": 3},
-        {"query": f'"{card_name}" transfer partners airlines hotels', "category": "redemption", "priority": 3},
-    ])
+    queries.extend(
+        [
+            {
+                "query": f'"{card_name}" redemption value "point value"',
+                "category": "redemption",
+                "priority": 3,
+            },
+            {
+                "query": f'"{card_name}" transfer partners airlines hotels',
+                "category": "redemption",
+                "priority": 3,
+            },
+        ]
+    )
 
     return queries
 
@@ -921,14 +1073,20 @@ def search_card_info(card_name: str, bank: str = "", max_results: int = 15) -> d
 
         # Group by category for easier processing
         categorized = {
-            "official_docs": [r for r in all_results if r["category"] == "official_docs"],
+            "official_docs": [
+                r for r in all_results if r["category"] == "official_docs"
+            ],
             "community": [r for r in all_results if r["category"] == "community"],
             "cc_review": [r for r in all_results if r["category"] == "cc_review"],
             "aggregator": [r for r in all_results if r["category"] == "aggregator"],
             "financial": [r for r in all_results if r["category"] == "financial"],
             "rewards_math": [r for r in all_results if r["category"] == "rewards_math"],
-            "caps_exclusions": [r for r in all_results if r["category"] == "caps_exclusions"],
-            "variant_rules": [r for r in all_results if r["category"] == "variant_rules"],
+            "caps_exclusions": [
+                r for r in all_results if r["category"] == "caps_exclusions"
+            ],
+            "variant_rules": [
+                r for r in all_results if r["category"] == "variant_rules"
+            ],
             "redemption": [r for r in all_results if r["category"] == "redemption"],
         }
 
@@ -1677,16 +1835,18 @@ def get_best_card_for_purchase(
             # Pre-formatted comparison for easy display
             quick_comparison = []
             for card in results[:5]:
-                quick_comparison.append({
-                    "rank": card["rank"],
-                    "card": f"{card['card_name']} ({card['bank']})",
-                    "points": f"{card['points']['total']:,.0f}",
-                    "multiplier": f"{card['multipliers']['effective']}x",
-                    "best_value": f"₹{card['cash_value']['best_value']:,.0f}",
-                    "best_via": card["cash_value"]["best_partner"],
-                    "cashback_value": f"₹{card['cash_value']['base_value']:,.0f}",
-                    "warning": card["cap_status"]["warning"],
-                })
+                quick_comparison.append(
+                    {
+                        "rank": card["rank"],
+                        "card": f"{card['card_name']} ({card['bank']})",
+                        "points": f"{card['points']['total']:,.0f}",
+                        "multiplier": f"{card['multipliers']['effective']}x",
+                        "best_value": f"₹{card['cash_value']['best_value']:,.0f}",
+                        "best_via": card["cash_value"]["best_partner"],
+                        "cashback_value": f"₹{card['cash_value']['base_value']:,.0f}",
+                        "warning": card["cap_status"]["warning"],
+                    }
+                )
 
             return {
                 "status": "success",
@@ -1828,7 +1988,9 @@ def analyze_expenses(
             total_spend = sum(e.amount for e in expenses)
             total_points = sum(e.points_earned or 0 for e in expenses)
             transaction_count = len(expenses)
-            avg_transaction = total_spend / transaction_count if transaction_count else 0
+            avg_transaction = (
+                total_spend / transaction_count if transaction_count else 0
+            )
 
             # Category breakdown
             category_spend = {}
@@ -1836,7 +1998,9 @@ def analyze_expenses(
             for e in expenses:
                 cat = e.category or "Uncategorized"
                 category_spend[cat] = category_spend.get(cat, 0) + e.amount
-                category_points[cat] = category_points.get(cat, 0) + (e.points_earned or 0)
+                category_points[cat] = category_points.get(cat, 0) + (
+                    e.points_earned or 0
+                )
 
             # Sort by spend descending
             sorted_categories = sorted(
@@ -1847,13 +2011,15 @@ def analyze_expenses(
             for cat, spend in sorted_categories:
                 points = category_points.get(cat, 0)
                 pct = (spend / total_spend * 100) if total_spend else 0
-                category_breakdown.append({
-                    "category": cat,
-                    "spend": f"₹{spend:,.0f}",
-                    "spend_raw": spend,
-                    "points": f"{points:,.0f}",
-                    "percent_of_total": f"{pct:.1f}%",
-                })
+                category_breakdown.append(
+                    {
+                        "category": cat,
+                        "spend": f"₹{spend:,.0f}",
+                        "spend_raw": spend,
+                        "points": f"{points:,.0f}",
+                        "percent_of_total": f"{pct:.1f}%",
+                    }
+                )
 
             # Card usage breakdown
             card_spend = {}
@@ -1866,26 +2032,28 @@ def analyze_expenses(
                 if cid not in card_names and e.card:
                     card_names[cid] = f"{e.card.name} ({e.card.bank})"
 
-            sorted_cards = sorted(
-                card_spend.items(), key=lambda x: x[1], reverse=True
-            )
+            sorted_cards = sorted(card_spend.items(), key=lambda x: x[1], reverse=True)
 
             card_breakdown = []
             for cid, spend in sorted_cards:
                 points = card_points.get(cid, 0)
                 pct = (spend / total_spend * 100) if total_spend else 0
-                card_breakdown.append({
-                    "card": card_names.get(cid, f"Card {cid}"),
-                    "spend": f"₹{spend:,.0f}",
-                    "spend_raw": spend,
-                    "points": f"{points:,.0f}",
-                    "percent_of_total": f"{pct:.1f}%",
-                })
+                card_breakdown.append(
+                    {
+                        "card": card_names.get(cid, f"Card {cid}"),
+                        "spend": f"₹{spend:,.0f}",
+                        "spend_raw": spend,
+                        "points": f"{points:,.0f}",
+                        "percent_of_total": f"{pct:.1f}%",
+                    }
+                )
 
             # Calculate effective reward rate
             # Estimate value: use average base_point_value across cards
             cards = list(session.exec(select(CreditCard)).all())
-            avg_point_value = sum(c.base_point_value for c in cards) / len(cards) if cards else 0.30
+            avg_point_value = (
+                sum(c.base_point_value for c in cards) / len(cards) if cards else 0.30
+            )
             estimated_value = total_points * avg_point_value
             effective_rate = (estimated_value / total_spend * 100) if total_spend else 0
 
@@ -1928,6 +2096,95 @@ def analyze_expenses(
 
     except Exception as e:
         logger.error(f"Error analyzing expenses: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def get_points_history(limit: int = 20) -> dict:
+    """
+    Shows unified points history: both earned (from transactions) and adjustments (redemptions, bonuses).
+
+    This gives a complete timeline of all points activity across all cards.
+
+    Args:
+        limit: Maximum number of entries to return (default: 20).
+
+    Returns:
+        dict: History entries with date, card, amount, type (earned/redemption/bonus/etc), and description.
+    """
+    try:
+        with Session(engine) as session:
+            query = text("""
+            SELECT 
+                T1.date as date,
+                T2.name as card,
+                T1.amount as points,
+                T1.adjustment_type as type,
+                T1.description as description
+            FROM pointadjustment T1 
+            JOIN creditcard T2 ON T1.card_id = T2.id
+
+            UNION ALL
+
+            SELECT 
+                T3.date as date,
+                T4.name as card,
+                T3.points_earned as points,
+                'earned' as type,
+                T3.merchant || ' (' || T3.category || ')' as description
+            FROM expense T3 
+            JOIN creditcard T4 ON T3.card_id = T4.id
+            WHERE T3.points_earned > 0
+
+            ORDER BY date DESC
+            LIMIT :limit;
+            """)
+
+            results = session.exec(query, params={"limit": limit}).all()
+
+            history = []
+            for row in results:
+                date_val = row[0]
+                if isinstance(date_val, datetime):
+                    date_str = date_val.strftime("%Y-%m-%d %H:%M")
+                else:
+                    date_str = str(date_val)[:16]
+
+                history.append(
+                    {
+                        "date": date_str,
+                        "card": row[1],
+                        "points": round(row[2], 2),
+                        "type": row[3],
+                        "description": row[4],
+                    }
+                )
+
+            # Summary stats
+            total_earned = sum(h["points"] for h in history if h["type"] == "earned")
+            total_redeemed = sum(
+                abs(h["points"]) for h in history if h["type"] == "redemption"
+            )
+            total_bonuses = sum(
+                h["points"]
+                for h in history
+                if h["type"] in ["signup_bonus", "referral", "promo"]
+            )
+
+            return {
+                "status": "success",
+                "count": len(history),
+                "history": history,
+                "summary": {
+                    "total_earned": round(total_earned, 2),
+                    "total_redeemed": round(total_redeemed, 2),
+                    "total_bonuses": round(total_bonuses, 2),
+                },
+            }
+
+    except Exception as e:
+        logger.error(f"Error fetching points history: {e}")
+        logger.error(traceback.format_exc())
         return {"status": "error", "message": str(e)}
 
 
