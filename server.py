@@ -32,7 +32,7 @@ BANK_DOMAINS_FILE = Path(__file__).parent / "data" / "bank_domains.json"
 
 logger = getLogger(__name__)
 
-mcp = FastMCP("finance-server")
+mcp = FastMCP("swipe-smart")
 
 # =====================================================================
 # HELPERS & UTILITIES

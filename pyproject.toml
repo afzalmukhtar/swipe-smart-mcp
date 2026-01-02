@@ -1,7 +1,7 @@
 [project]
-name = "financial-mcp-server"
+name = "swipe-smart-mcp"
 version = "0.1.0"
-description = "MCP server for credit card rewards tracking and optimization"
+description = "AI-powered credit card rewards optimizer - always swipe the right card"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
