@@ -1797,12 +1797,18 @@ def analyze_expenses(
                     period_label = "Last 30 days"
                 end = today
 
+            # Create datetime bounds to ensure full day coverage
+            # Important: SQLModel comparisons with date vs datetime can be tricky.
+            # We convert to datetime boundaries to be explicit.
+            start_dt = datetime.combine(start, datetime.min.time())
+            end_dt = datetime.combine(end, datetime.max.time())
+
             # Query expenses in date range
             query = (
                 select(Expense)
                 .join(CreditCard)
-                .where(Expense.date >= start)
-                .where(Expense.date <= end)
+                .where(Expense.date >= start_dt)
+                .where(Expense.date <= end_dt)
             )
             expenses = list(session.exec(query).all())
 

@@ -51,6 +51,7 @@ class RewardsEngine:
     def __init__(self, session: Session):
         self.session = session
         self.GLOBAL_EXCLUSIONS = self._load_exclusions()
+        self.CATEGORY_ALIASES = self._load_category_aliases()
 
     def _load_exclusions(self) -> List[str]:
         """
@@ -80,6 +81,37 @@ class RewardsEngine:
                 "Interest",
                 "Cash Advance",
             ]
+
+    def _load_category_aliases(self) -> dict[str, str]:
+        """
+        Loads category aliases from data/categories.json.
+        Returns a mapping of alias -> canonical name (lowercased).
+        e.g., {"bill payments": "utilities", "bills": "utilities"}
+        """
+        try:
+            root_dir = Path(__file__).resolve().parent.parent.parent
+            json_path = root_dir / "data" / "categories.json"
+
+            with open(json_path, "r") as f:
+                data = json.load(f)
+
+            alias_map = {}
+            for cat in data.get("categories", []):
+                canonical = cat["name"].lower()
+                for alias in cat.get("aliases", []):
+                    alias_map[alias.lower()] = canonical
+            return alias_map
+        except Exception as e:
+            print(f"Error loading category aliases: {e}")
+            return {}
+
+    def _normalize_category(self, category: str) -> str:
+        """
+        Resolves a category to its canonical name using aliases.
+        If no alias found, returns the original (lowercased).
+        """
+        category_lower = category.lower()
+        return self.CATEGORY_ALIASES.get(category_lower, category_lower)
 
     def calculate_rewards(self, expense: Expense) -> RewardResult:
         """
@@ -278,9 +310,11 @@ class RewardsEngine:
             if r.category.lower() == expense.platform.lower():
                 candidates.append(r)
 
-        # Category Match
+        # Category Match (with alias resolution)
+        normalized_expense_category = self._normalize_category(expense.category)
         for r in rules:
-            if r.category.lower() == expense.category.lower():
+            normalized_rule_category = self._normalize_category(r.category)
+            if normalized_rule_category == normalized_expense_category:
                 candidates.append(r)
 
         # Fallback

@@ -89,6 +89,10 @@
       "id": "utilities",
       "name": "Utilities",
       "description": "Electricity, water, piped gas bills",
+      "aliases": [
+        "Bill Payments",
+        "Bills"
+      ],
       "mcc_codes": [
         "4900"
       ],
