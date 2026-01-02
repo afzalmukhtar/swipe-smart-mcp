@@ -121,5 +121,3 @@ Dining, Groceries, Fuel, Travel (Flights, Hotels, Rail), Shopping, Entertainment
 MIT
 
 ---
-
-Built for the Indian credit card rewards ecosystem 🇮🇳
