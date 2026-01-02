@@ -112,7 +112,8 @@ def get_card_definitions():
                 billing_cycle_start=15,
                 rewards_currency="Reward Points",
                 base_point_value=0.30,
-                description="Premium travel card with 10x on SmartBuy (flights, hotels), 4x on dining, and 2x on other spends. Best redeemed via SmartBuy for flights at 0.30/point value.",
+                min_spend_per_point=150.0,
+                description="Earns 4 Reward Points per ₹150 spent. 10x on SmartBuy (flights, hotels), 4x on dining, 2x on others. Points worth ₹0.30 each via SmartBuy flights.",
             ),
             "buckets": [
                 CapBucket(
@@ -250,7 +251,8 @@ def get_card_definitions():
                 billing_cycle_start=1,
                 rewards_currency="Cashback",
                 base_point_value=1.00,
-                description="5% cashback on online spends (capped at ₹5000/month), 1% on offline. Direct cashback credited to statement. Best for heavy online shoppers.",
+                min_spend_per_point=100.0,
+                description="5% cashback on online spends (₹5 per ₹100, capped at ₹5000/month), 1% on offline. Direct statement credit.",
             ),
             "buckets": [
                 CapBucket(
@@ -260,18 +262,19 @@ def get_card_definitions():
                 ),
             ],
             "rules": [
-                # 5% on ANY Online Transaction (inferred or explicit)
+                # 5% on ANY Online Transaction
                 {
                     "category": "Any",
-                    "base": 0.05,
+                    "base": 5.0,
                     "bonus": 0.0,
                     "bucket_idx": 0,
                     "min_spend": 0,
+                    "match_conditions": {"is_online": "true"},
                 },
                 # Base Rule (1%)
                 {
                     "category": "Base",
-                    "base": 0.01,
+                    "base": 1.0,
                     "bonus": 0.0,
                     "bucket_idx": None,
                     "min_spend": 0,
@@ -320,7 +323,8 @@ def get_card_definitions():
                 billing_cycle_start=10,
                 rewards_currency="Cashback",
                 base_point_value=1.00,
-                description="5% on bill payments via Google Pay, 4% on Swiggy/Zomato, 2% on everything else. Great utility card with no annual fee on ₹2L spend.",
+                min_spend_per_point=100.0,
+                description="5% on bill payments via Google Pay (₹5 per ₹100), 4% on Swiggy/Zomato, 2% elsewhere. Great utility card.",
             ),
             "buckets": [
                 CapBucket(
@@ -425,7 +429,8 @@ def get_card_definitions():
                 billing_cycle_start=5,
                 rewards_currency="Membership Rewards",
                 base_point_value=0.50,
-                description="Ultra-premium charge card with 5x on travel, 3x on dining/entertainment. Airport lounge access, hotel status. Transfer to airlines at 1:1. High annual fee but premium perks.",
+                min_spend_per_point=50.0,
+                description="Earns 1 MR point per ₹50 spent. 5x on travel, 3x on dining/entertainment, 2x on shopping. Points worth ₹0.50 each. Transfer to airlines at 1:1.",
             ),
             "buckets": [],  # Amex Plat typically has no caps
             "rules": [
@@ -542,7 +547,8 @@ def get_card_definitions():
                 billing_cycle_start=20,
                 rewards_currency="Amazon Pay Balance",
                 base_point_value=1.00,
-                description="5% back on Amazon.in for Prime members (capped), 2% on bill payments, 1% elsewhere. Rewards as Amazon Pay balance. Best for Amazon shoppers with Prime.",
+                min_spend_per_point=100.0,
+                description="5% back on Amazon.in for Prime members (₹5 per ₹100, capped), 2% on bill payments, 1% elsewhere. Rewards as Amazon Pay balance.",
                 tier_status={"membership": "prime"},
             ),
             "buckets": [
@@ -650,7 +656,8 @@ def get_card_definitions():
                 billing_cycle_start=20,
                 rewards_currency="Amazon Pay Balance",
                 base_point_value=1.00,
-                description="2% back on Amazon.in for non-Prime members, 2% on bill payments, 1% elsewhere. Consider Prime membership for 5% Amazon rewards.",
+                min_spend_per_point=100.0,
+                description="2% back on Amazon.in for non-Prime (₹2 per ₹100), 2% on bill payments, 1% elsewhere.",
                 tier_status={"membership": "non_prime"},
             ),
             "buckets": [],  # Usually, 3% is uncapped or high cap for non-prime
@@ -752,7 +759,8 @@ def get_card_definitions():
                 billing_cycle_start=8,
                 rewards_currency="Reward Points",
                 base_point_value=0.50,
-                description="Super-premium card with 10x on SmartBuy, 5x on all spends. Points worth ₹0.50 via SmartBuy flights. Unlimited lounge access. Invite-only card.",
+                min_spend_per_point=150.0,
+                description="Earns 5 Reward Points per ₹150 spent. 10x on SmartBuy, 5x on all spends. Points worth ₹0.50 each. Invite-only card.",
             ),
             "buckets": [
                 CapBucket(
@@ -871,7 +879,8 @@ def get_card_definitions():
                 billing_cycle_start=12,
                 rewards_currency="Cashback",
                 base_point_value=1.00,
-                description="Customizable card - pick 3 categories for 3.5% cashback (capped at ₹750/month), 0.5% on rest. No annual fee. Good for focused spending in chosen categories.",
+                min_spend_per_point=100.0,
+                description="Pick 3 categories for 3.5% cashback (₹3.5 per ₹100, capped at ₹750/month), 0.5% on rest. No annual fee.",
             ),
             "buckets": [
                 CapBucket(
@@ -962,6 +971,8 @@ def get_card_definitions():
                 billing_cycle_start=3,
                 rewards_currency="Reward Points",
                 base_point_value=0.25,
+                min_spend_per_point=150.0,
+                description="Earns 10 Reward Points per ₹150 spent. 10x on travel, 6x on fuel, 3x on dining/shopping. Points worth ₹0.25 each.",
             ),
             "buckets": [
                 CapBucket(

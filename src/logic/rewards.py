@@ -182,8 +182,10 @@ class RewardsEngine:
         override_rule: Optional[RewardRule] = None,
     ) -> RewardResult:
         """
-        Calculates Base + Bonus points, then applies category-specific caps.
-        Bonus points are often capped while base points flow through.
+        Calculates rewards based on card type.
+
+        Cashback: Uses single combined rate (base + bonus)
+        Reward Points: Base + Bonus calculated separately, bonus capped
         """
         result = RewardResult()
 
@@ -203,8 +205,23 @@ class RewardsEngine:
             result.breakdown.append("No matching rule found. 0.0 points.")
             return result
 
-        raw_base = expense.amount * base_rate
-        raw_bonus = expense.amount * bonus_rate
+        # Calculate slabs (how many reward units earned)
+        slabs = expense.amount / card.min_spend_per_point
+
+        # Cashback: single combined rate, no separate base/bonus
+        if card.rewards_currency.lower() == "cashback":
+            combined_rate = base_rate + bonus_rate
+            result.total_points = slabs * combined_rate
+            result.base_points = result.total_points
+            result.bonus_points = 0.0
+            result.breakdown.append(
+                f"Cashback: {slabs:.2f} units × {combined_rate} = {result.total_points:.2f}"
+            )
+            return result
+
+        # Reward Points: base + bonus calculated separately
+        raw_base = slabs * base_rate
+        raw_bonus = slabs * bonus_rate
         final_bonus = raw_bonus
 
         # Apply category-specific caps (bonus only, base flows through)
@@ -271,12 +288,15 @@ class RewardsEngine:
             if r.category in ["Base", "All Spends", "General", "Any"]:
                 candidates.append(r)
 
-        # Filter by tier matching
+        # Filter by condition matching (tier + expense properties like is_online)
         if candidates:
-            tier_matched = [r for r in candidates if self._matches_tier(r, card)]
-            if tier_matched:
-                candidates = tier_matched
+            condition_matched = [
+                r for r in candidates if self._matches_conditions(r, card, expense)
+            ]
+            if condition_matched:
+                candidates = condition_matched
             else:
+                # Fall back to rules without any conditions
                 candidates = [r for r in candidates if r.match_conditions is None]
 
         if not candidates:
@@ -284,20 +304,36 @@ class RewardsEngine:
 
         return max(candidates, key=lambda r: r.base_multiplier + r.bonus_multiplier)
 
-    def _matches_tier(self, rule: RewardRule, card: CreditCard) -> bool:
+    def _matches_conditions(
+        self, rule: RewardRule, card: CreditCard, expense: Expense
+    ) -> bool:
         """
-        Check if rule's match_conditions match card's tier_status.
-        Universal rules (match_conditions=None) match all cards.
+        Check if rule's match_conditions match card tier_status AND expense properties.
+        Universal rules (match_conditions=None) match all.
+
+        Supports:
+        - Card tier conditions: {"membership": "prime"}
+        - Expense conditions: {"is_online": "true"}
         """
         if rule.match_conditions is None:
             return True
 
         tier_status = card.tier_status or {}
 
-        return all(
-            tier_status.get(key) == value
-            for key, value in rule.match_conditions.items()
-        )
+        for key, value in rule.match_conditions.items():
+            # Check expense-level conditions
+            if key == "is_online":
+                expense_is_online = (
+                    expense.is_online if expense.is_online is not None else False
+                )
+                required_online = value.lower() == "true"
+                if expense_is_online != required_online:
+                    return False
+            # Check card tier conditions
+            elif tier_status.get(key) != value:
+                return False
+
+        return True
 
     def _get_bucket_usage(
         self, bucket_id: int, start_date: datetime, end_date: datetime

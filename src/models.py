@@ -70,6 +70,10 @@ class CreditCard(SQLModel, table=True):
     rewards_currency: str = "Points"
     base_point_value: float = 0.25
 
+    # Minimum spend to earn 1 unit of reward
+    # e.g., ₹150 for HDFC (4 pts per ₹150), ₹100 for cashback (5 per ₹100 = 5%)
+    min_spend_per_point: float = 100.0
+
     # Tier status: {"membership": "prime"} or {"tier": "gold"}
     # LLM confirms this before calculating rewards
     tier_status: dict[str, str] = Field(default={}, sa_column=Column(JSON))
@@ -201,7 +205,7 @@ class Expense(SQLModel, table=True):
 class PointAdjustment(SQLModel, table=True):
     """
     Tracks point adjustments (redemptions, bonuses, corrections).
-    
+
     Positive amount = points added (bonus, promo)
     Negative amount = points removed (redemption, expiration)
     """

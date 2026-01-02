@@ -23,6 +23,7 @@ def test_rewards():
             bank="Test Bank",
             monthly_limit=100000.0,
             billing_cycle_start=1,
+            min_spend_per_point=100.0,  # (amount/100) * rate
         )
         session.add(test_card)
         session.commit()
@@ -83,7 +84,8 @@ def test_rewards():
         )
         exp1.card = test_card
         res1 = calculate_rewards(session, exp1)
-        print(f"Points: {res1.total_points} (Expected 4000.0)")
+        # (1000/100) * (2+2) = 10 * 4 = 40 pts total (20 base + 20 bonus)
+        print(f"Points: {res1.total_points} (Expected 40.0)")
         print(f"Breakdown: {res1.breakdown}")
 
         # 3. Test Global Exclusion Override (Fuel)
@@ -97,7 +99,8 @@ def test_rewards():
         )
         exp2.card = test_card
         res2 = calculate_rewards(session, exp2)
-        print(f"Points: {res2.total_points} (Expected 2000.0)")
+        # (2000/100) * 1 = 20 pts
+        print(f"Points: {res2.total_points} (Expected 20.0)")
         print(f"Breakdown: {res2.breakdown}")
 
         # 4. Test Hard Exclusion (Rent)
@@ -181,7 +184,7 @@ def test_rewards():
             print(f"Online Points: {res6.total_points} (Expected: 50.0 -> 5% of 1000)")
             print(f"Breakdown: {res6.breakdown}")
 
-            # B. Offline Transaction (1%)
+            # B. Offline Transaction (1%): (1000/100)*1 = 10
             print("\n--- Test 6b: SBI Cashback Offline ---")
             exp6b = Expense(
                 amount=1000,
@@ -194,7 +197,7 @@ def test_rewards():
             exp6b.card = sbi_card
             res6b = calculate_rewards(session, exp6b)
             print(
-                f"Offline Points: {res6b.total_points} (Expected: 10.0 -> 1% of 1000)"
+                f"Offline Points: {res6b.total_points} (Expected: 10.0 with Base 1% rule)"
             )
             print(f"Breakdown: {res6b.breakdown}")
         else:
@@ -217,10 +220,8 @@ def test_rewards():
             )
             exp7.card = hdfc_card
             res7 = calculate_rewards(session, exp7)
-            # HDFC Base Rule was 1.0x (replaced 1.33 with 1.0)
-            print(
-                f"Points: {res7.total_points} (Expected: 1000.0 * 1.0 = 1000.0 with Base Rule)"
-            )
+            # HDFC Base Rule 1.0x, min_spend=150: (2000/150) * 1 = 13.33
+            print(f"Points: {res7.total_points} (Expected: 13.33 with Base Rule)")
             print(f"Breakdown: {res7.breakdown}")
         else:
             print("Skipping Test 7: HDFC Regalia card not found.")
