@@ -92,3 +92,9 @@ tmp/
 .env
 .env.local
 .env.production
+
+# Commercial licensing (DO NOT COMMIT)
+COMMERCIAL_LICENSE_*.md
+contracts/
+client-agreements/
+signed-licenses/
