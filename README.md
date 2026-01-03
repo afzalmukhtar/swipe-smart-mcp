@@ -1,7 +1,7 @@
 ![Swipe Smart MCP - AI-powered credit card rewards optimizer with futuristic digital interface showing multiple credit cards and reward tracking visualization](./Swipe-Smart-MCP.png)
 
 <p align="center">
-  <em>Banner image generated using ChatGPT Sora</em>
+  <em>Banner image generated using Gemini Nano Banana Pro</em>
 </p>
 
 # Swipe Smart MCP 💳
